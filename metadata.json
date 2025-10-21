@@ -1,0 +1,5 @@
+{
+  "name": "FLED L2 Reading Designer",
+  "description": "A research-oriented tool for generating English as a Foreign Language (EFL) reading materials based on Second Language Acquisition (SLA) principles. Users can specify a theme and CEFR level to receive a complete, pedagogically-sound lesson plan.",
+  "requestFramePermissions": []
+}
