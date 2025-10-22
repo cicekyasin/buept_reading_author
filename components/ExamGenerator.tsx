@@ -37,6 +37,23 @@ const ExamGenerator: React.FC<ExamGeneratorProps> = ({ credits, isCreditsLoading
   const [gradingResults, setGradingResults] = useState<GradingResults | null>(null);
   const [isGrading, setIsGrading] = useState<boolean>(false);
 
+  const getTimeLeftText = (timestamp: number) => {
+    const now = Date.now();
+    const diffMs = timestamp - now;
+    if (diffMs <= 0) return 'soon';
+    
+    const hours = Math.floor(diffMs / (1000 * 60 * 60));
+    const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+
+    if (hours > 0) {
+        return `in ~${hours}h ${minutes}m`;
+    }
+    if (minutes > 0) {
+        return `in ~${minutes}m`;
+    }
+    return 'soon';
+  };
+
   const getButtonStatus = (sectionKey: 'bueptReading1' | 'bueptReading2') => {
     if (isDevMode) {
       return { 
@@ -50,9 +67,10 @@ const ExamGenerator: React.FC<ExamGeneratorProps> = ({ credits, isCreditsLoading
     
     if (credits.system === 'simple') {
       const canGenerate = credits.shared >= credits.costs.buept;
+      const baseText = sectionKey === 'bueptReading1' ? 'Generate Reading 1' : 'Generate Reading 2';
       const buttonText = canGenerate 
-        ? `${sectionKey === 'bueptReading1' ? 'Generate Reading 1' : 'Generate Reading 2'} (${credits.costs.buept} Credit)`
-        : `Not Enough Credits`;
+        ? `${baseText} (${credits.shared}/${credits.limits.daily} Left)`
+        : `Out of Credits (Resets ${getTimeLeftText(credits.nextResetTimestamp)})`;
       return { canGenerate, text: buttonText };
     }
     

@@ -9,8 +9,8 @@ import QuestionCustomizationModal from './components/QuestionCustomizationModal'
 import PassageViewerModal from './components/PassageViewerModal';
 import ExamGenerator from './components/ExamGenerator';
 import InteractiveLessonTest from './components/InteractiveLessonTest';
-import { generateLessonPlan, findSourcesForPassage, gradeOpenEndedAnswer } from './services/geminiService';
-import type { CEFRLevel, LessonPlan, Source, UserRole, AppMode, UserAnswers, GradingResults, GradingResult, CreditSystemMode } from './types';
+import { generateLessonPlan, findSourcesForPassage, gradeOpenEndedAnswer, analyzePassageCefrLevel, refinePassage } from './services/geminiService';
+import type { CEFRLevel, LessonPlan, Source, UserRole, AppMode, UserAnswers, GradingResults, GradingResult, CreditSystemMode, CefrAnalysisResult } from './types';
 import { useCredits } from './hooks/useCredits';
 
 const LOCAL_STORAGE_KEY_LESSON = 'fled-saved-lesson-plan';
@@ -47,7 +47,6 @@ const App: React.FC = () => {
   const [exemplarQuestions, setExemplarQuestions] = useState<string>('');
   const [pedagogicalFocus, setPedagogicalFocus] = useState<string>('');
   const [customVocabulary, setCustomVocabulary] = useState<string>('');
-  const [numberOfQuestions, setNumberOfQuestions] = useState<number>(6);
   
   const [lessonPlan, setLessonPlan] = useState<LessonPlan | null>(null);
   const [sources, setSources] = useState<Source[] | null>(null);
@@ -61,6 +60,13 @@ const App: React.FC = () => {
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [activeHistoryIndex, setActiveHistoryIndex] = useState<number | null>(null);
   const [draftToRestore, setDraftToRestore] = useState<any | null>(null);
+  
+  // Analysis and Refinement State
+  const [cefrAnalysisResult, setCefrAnalysisResult] = useState<CefrAnalysisResult | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
+  const [isRefining, setIsRefining] = useState<'none' | 'simpler' | 'more complex'>('none');
+  const [currentRequestParams, setCurrentRequestParams] = useState<any>(null);
+
 
   // Interactive Lesson Test State
   const [isLessonTestActive, setIsLessonTestActive] = useState<boolean>(false);
@@ -76,18 +82,12 @@ const App: React.FC = () => {
   const loadingIntervalRef = useRef<number | null>(null);
   const autoSaveTimeoutRef = useRef<number | null>(null);
   
-  const maxQuestions = useMemo(() => {
+  const numberOfQuestions = useMemo(() => {
     if (passageLength <= 300) return 6; // For ~250 words
     if (passageLength <= 600) return 9; // For ~500 words
     if (passageLength <= 800) return 12; // for ~750 words
     return 15; // For 1000+ words
   }, [passageLength]);
-
-  useEffect(() => {
-    if (numberOfQuestions > maxQuestions) {
-        setNumberOfQuestions(maxQuestions);
-    }
-  }, [maxQuestions, numberOfQuestions]);
 
   // Initialize Theme, Role, and check for drafts
   useEffect(() => {
@@ -141,8 +141,7 @@ const App: React.FC = () => {
     exemplarQuestions,
     pedagogicalFocus,
     customVocabulary,
-    numberOfQuestions,
-  }), [topic, cefrLevel, passageLength, advancedInstructions, exemplarPassage, exemplarQuestions, pedagogicalFocus, customVocabulary, numberOfQuestions]);
+  }), [topic, cefrLevel, passageLength, advancedInstructions, exemplarPassage, exemplarQuestions, pedagogicalFocus, customVocabulary]);
 
   useEffect(() => {
     const hasContent = formState.topic.trim() || formState.advancedInstructions.trim() || formState.exemplarPassage.trim() || formState.exemplarQuestions.trim() || formState.pedagogicalFocus.trim() || formState.customVocabulary.trim();
@@ -218,7 +217,7 @@ const App: React.FC = () => {
   }, [topic]);
   
   const handleConfirmGeneration = useCallback(async () => {
-    if (!credits || isCreditsLoading) return; // Wait for credits to load
+    if (!credits || isCreditsLoading) return;
 
     const canGenerate = creditSystemMode === 'simple'
         ? credits.shared >= credits.costs.lessonPlan
@@ -236,26 +235,36 @@ const App: React.FC = () => {
     setIsQuestionModalOpen(false);
     setIsLoading(true);
     setIsSearchingSources(true);
+    setIsAnalyzing(true);
     setError(null);
     setLessonPlan(null);
     setSources(null);
+    setCefrAnalysisResult(null);
     startLoadingMessages();
 
+    const requestParams = {
+        topic, cefrLevel, advancedInstructions, passageLength, numberOfQuestions, 
+        exemplarPassage, exemplarQuestions, pedagogicalFocus, customVocabulary
+    };
+    setCurrentRequestParams(requestParams);
+
     try {
+      // FIX: Call generateLessonPlan with explicit arguments instead of spreading an object's values.
+      // The spread operator with Object.values() does not guarantee argument order and is not type-safe.
       const plan = await generateLessonPlan(
-          topic, 
-          cefrLevel, 
-          advancedInstructions, 
-          passageLength, 
-          numberOfQuestions, 
-          exemplarPassage,
-          exemplarQuestions,
-          pedagogicalFocus,
-          customVocabulary
+        topic,
+        cefrLevel,
+        advancedInstructions,
+        passageLength,
+        numberOfQuestions,
+        exemplarPassage,
+        exemplarQuestions,
+        pedagogicalFocus,
+        customVocabulary
       );
       deductCredits('lessonPlan');
-      const newHistoryEntry: HistoryEntry = { lessonPlan: plan, sources: null };
       
+      const newHistoryEntry: HistoryEntry = { lessonPlan: plan, sources: null };
       setLessonPlan(plan);
       setHistory(prev => [newHistoryEntry, ...prev]);
       setActiveHistoryIndex(0);
@@ -263,16 +272,22 @@ const App: React.FC = () => {
       setIsLoading(false);
       setIsInputCollapsed(true);
       stopLoadingMessages();
-      clearAutoSave(); // Clear draft on successful generation
+      clearAutoSave();
+
+      analyzePassageCefrLevel(plan.readingPassage, plan.cefrLevel)
+        .then(setCefrAnalysisResult)
+        .catch(analysisError => {
+            console.error("Failed to analyze passage:", analysisError);
+            setCefrAnalysisResult({ estimatedLevel: 'N/A', justification: 'Analysis failed.' });
+        })
+        .finally(() => setIsAnalyzing(false));
 
       findSourcesForPassage(plan.readingPassage)
         .then(foundSources => {
           setSources(foundSources);
           setHistory(prev => {
             const newHistory = [...prev];
-            if (newHistory[0]) {
-              newHistory[0].sources = foundSources;
-            }
+            if (newHistory[0]) newHistory[0].sources = foundSources;
             return newHistory;
           });
         })
@@ -280,9 +295,7 @@ const App: React.FC = () => {
           console.error("Failed to fetch sources:", sourceError);
           setSources([]);
         })
-        .finally(() => {
-          setIsSearchingSources(false);
-        });
+        .finally(() => setIsSearchingSources(false));
 
     } catch (err) {
       console.error(err);
@@ -291,11 +304,51 @@ const App: React.FC = () => {
       setIsLoading(false);
       stopLoadingMessages();
       setIsSearchingSources(false);
+      setIsAnalyzing(false);
     }
   }, [
     topic, cefrLevel, advancedInstructions, passageLength, numberOfQuestions, exemplarPassage, 
     exemplarQuestions, pedagogicalFocus, customVocabulary, clearAutoSave, credits, deductCredits, creditSystemMode, isCreditsLoading, isDevMode
   ]);
+  
+  const handleRefinePassage = useCallback(async (direction: 'simpler' | 'more complex') => {
+    if (!lessonPlan || !currentRequestParams) return;
+
+    setIsRefining(direction);
+    setCefrAnalysisResult(null); // Clear old analysis
+    setError(null);
+
+    try {
+      const refinedPlan = await refinePassage(lessonPlan, direction, currentRequestParams);
+      
+      // Replace current lesson plan with refined one
+      setLessonPlan(refinedPlan);
+      
+      // Add to history
+      const newHistoryEntry: HistoryEntry = { lessonPlan: refinedPlan, sources: sources }; // carry over old sources
+      setHistory(prev => [newHistoryEntry, ...prev]);
+      setActiveHistoryIndex(0);
+
+      // Re-analyze the new passage
+      setIsAnalyzing(true);
+       analyzePassageCefrLevel(refinedPlan.readingPassage, refinedPlan.cefrLevel)
+        .then(setCefrAnalysisResult)
+        .catch(analysisError => {
+            console.error("Failed to analyze refined passage:", analysisError);
+            setCefrAnalysisResult({ estimatedLevel: 'N/A', justification: 'Analysis failed.' });
+        })
+        .finally(() => setIsAnalyzing(false));
+
+    } catch (err) {
+      console.error(err);
+      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
+      setError(errorMessage);
+    } finally {
+      setIsRefining('none');
+    }
+
+  }, [lessonPlan, currentRequestParams, sources]);
+
 
   const handleSave = useCallback(() => {
     if (lessonPlan) {
@@ -308,7 +361,6 @@ const App: React.FC = () => {
         exemplarQuestions,
         pedagogicalFocus,
         customVocabulary,
-        numberOfQuestions,
         lessonPlan,
         sources,
       };
@@ -316,7 +368,7 @@ const App: React.FC = () => {
       setSavedLessonExists(true);
       clearAutoSave();
     }
-  }, [lessonPlan, sources, topic, cefrLevel, passageLength, advancedInstructions, exemplarPassage, exemplarQuestions, pedagogicalFocus, customVocabulary, numberOfQuestions, clearAutoSave]);
+  }, [lessonPlan, sources, topic, cefrLevel, passageLength, advancedInstructions, exemplarPassage, exemplarQuestions, pedagogicalFocus, customVocabulary, clearAutoSave]);
 
   const handleLoad = useCallback(() => {
     const savedData = localStorage.getItem(LOCAL_STORAGE_KEY_LESSON);
@@ -331,12 +383,12 @@ const App: React.FC = () => {
         setExemplarQuestions(parsedData.exemplarQuestions || '');
         setPedagogicalFocus(parsedData.pedagogicalFocus || '');
         setCustomVocabulary(parsedData.customVocabulary || '');
-        setNumberOfQuestions(parsedData.numberOfQuestions || 6);
         setLessonPlan(parsedData.lessonPlan);
         setSources(parsedData.sources || null);
         setError(null);
         setIsInputCollapsed(true);
         clearAutoSave();
+        setCefrAnalysisResult(null); // Clear analysis on load
         
         const newHistoryEntry = { lessonPlan: parsedData.lessonPlan, sources: parsedData.sources || null };
         setHistory([newHistoryEntry]);
@@ -360,7 +412,6 @@ const App: React.FC = () => {
     setExemplarQuestions(draftToRestore.exemplarQuestions || '');
     setPedagogicalFocus(draftToRestore.pedagogicalFocus || '');
     setCustomVocabulary(draftToRestore.customVocabulary || '');
-    setNumberOfQuestions(draftToRestore.numberOfQuestions || 6);
     setDraftToRestore(null);
   }, [draftToRestore]);
 
@@ -376,6 +427,7 @@ const App: React.FC = () => {
       setSources(selectedEntry.sources);
       setActiveHistoryIndex(index);
       setIsInputCollapsed(true);
+      setCefrAnalysisResult(null); // Clear analysis when switching history
     }
   }, [history]);
 
@@ -475,6 +527,10 @@ const App: React.FC = () => {
             creditSystemMode={creditSystemMode}
             setCreditSystemMode={setCreditSystemMode}
             onToggleDevMode={handleToggleDevMode}
+            cefrAnalysisResult={cefrAnalysisResult}
+            isAnalyzing={isAnalyzing}
+            isRefining={isRefining}
+            onRefinePassage={handleRefinePassage}
           />
       </div>
     </div>
@@ -526,9 +582,6 @@ const App: React.FC = () => {
             onConfirm={handleConfirmGeneration}
             passageLength={passageLength}
             setPassageLength={setPassageLength}
-            numberOfQuestions={numberOfQuestions}
-            setNumberOfQuestions={setNumberOfQuestions}
-            maxQuestions={maxQuestions}
           />
 
           <PassageViewerModal

@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { jsPDF } from 'jspdf';
-import type { LessonPlan, Source, ComprehensionQuestion, UserRole, CreditSystemMode } from '../types';
+import type { LessonPlan, Source, ComprehensionQuestion, UserRole, CreditSystemMode, CefrAnalysisResult } from '../types';
 import Loader from './Loader';
 import Feedback from './Feedback';
 import SaveIcon from './icons/SaveIcon';
@@ -14,6 +14,9 @@ import ExpandIcon from './icons/ExpandIcon';
 import PencilIcon from './icons/PencilIcon';
 import PdfIcon from './icons/PdfIcon';
 import CheckCircleIcon from './icons/CheckCircleIcon';
+import ArrowDownCircleIcon from './icons/ArrowDownCircleIcon';
+import ArrowUpCircleIcon from './icons/ArrowUpCircleIcon';
+import PencilSquareIcon from './icons/PencilSquareIcon';
 
 interface OutputDisplayProps {
   lessonPlan: LessonPlan | null;
@@ -30,6 +33,10 @@ interface OutputDisplayProps {
   creditSystemMode: CreditSystemMode;
   setCreditSystemMode: (mode: CreditSystemMode) => void;
   onToggleDevMode: () => void;
+  cefrAnalysisResult: CefrAnalysisResult | null;
+  isAnalyzing: boolean;
+  isRefining: 'none' | 'simpler' | 'more complex';
+  onRefinePassage: (direction: 'simpler' | 'more complex') => void;
 }
 
 const OutputDisplay: React.FC<OutputDisplayProps> = ({
@@ -47,6 +54,10 @@ const OutputDisplay: React.FC<OutputDisplayProps> = ({
   creditSystemMode,
   setCreditSystemMode,
   onToggleDevMode,
+  cefrAnalysisResult,
+  isAnalyzing,
+  isRefining,
+  onRefinePassage,
 }) => {
 
   const categorizedQuestions = useMemo(() => {
@@ -243,6 +254,43 @@ const OutputDisplay: React.FC<OutputDisplayProps> = ({
                 <div className="absolute bottom-0 left-0 right-0 h-24 bg-gradient-to-t from-white to-transparent dark:from-slate-800/50 pointer-events-none" aria-hidden="true"></div>
               </div>
             </Section>
+            <div className="mt-6 border-t border-slate-200 dark:border-slate-700 pt-6">
+                <h4 className="font-semibold text-slate-700 dark:text-slate-300 mb-3">AI Readability Analysis</h4>
+                 {isAnalyzing ? (
+                     <div className="flex items-center space-x-2 text-sm text-slate-500 dark:text-slate-400">
+                      <div className="w-4 h-4 border-2 border-slate-300 border-t-slate-500 rounded-full animate-spin"></div>
+                      <span>Analyzing passage...</span>
+                  </div>
+                 ) : cefrAnalysisResult ? (
+                    <div className="space-y-4">
+                        <div className="bg-slate-50/70 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-md p-3 text-sm">
+                            <p>
+                                <span className="font-semibold text-slate-700 dark:text-slate-300">AI Estimated Level: </span> 
+                                <span className="font-bold text-boun-blue dark:text-blue-400">{cefrAnalysisResult.estimatedLevel}</span>
+                            </p>
+                             <p className="mt-2 text-slate-600 dark:text-slate-400 italic">
+                                "{cefrAnalysisResult.justification}"
+                            </p>
+                        </div>
+                        <div className="flex items-center space-x-3">
+                            <button
+                                onClick={() => onRefinePassage('simpler')}
+                                disabled={isRefining !== 'none'}
+                                className="flex-1 flex justify-center items-center py-2 px-3 text-sm font-medium text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-700/50 border border-slate-300 dark:border-slate-600 rounded-md hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-wait"
+                            >
+                                {isRefining === 'simpler' ? <div className="w-5 h-5 border-2 border-slate-300 border-t-slate-500 rounded-full animate-spin"></div> : <><ArrowDownCircleIcon className="w-5 h-5 mr-2" /> Make it Simpler</>}
+                            </button>
+                            <button
+                                 onClick={() => onRefinePassage('more complex')}
+                                disabled={isRefining !== 'none'}
+                                className="flex-1 flex justify-center items-center py-2 px-3 text-sm font-medium text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-700/50 border border-slate-300 dark:border-slate-600 rounded-md hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-wait"
+                            >
+                               {isRefining === 'more complex' ? <div className="w-5 h-5 border-2 border-slate-300 border-t-slate-500 rounded-full animate-spin"></div> : <><ArrowUpCircleIcon className="w-5 h-5 mr-2" /> Make it More Complex</>}
+                            </button>
+                        </div>
+                    </div>
+                 ) : null}
+            </div>
           </Card>
           <Card>
             <Section icon={<QuestionMarkCircleIcon className="w-6 h-6" />} title="Comprehension Questions">
@@ -286,6 +334,20 @@ const OutputDisplay: React.FC<OutputDisplayProps> = ({
                 ))}
               </ul>
             </Section>
+            {lessonPlan.writingPrompts && lessonPlan.writingPrompts.length > 0 && (
+              <>
+                <hr className="my-6 border-slate-200 dark:border-slate-700" />
+                <Section icon={<PencilSquareIcon className="w-6 h-6" />} title="Writing Prompts">
+                  <ul className="space-y-4 list-disc list-inside">
+                    {lessonPlan.writingPrompts.map((prompt, index) => (
+                      <li key={index} className="prose prose-slate dark:prose-invert print:prose-sm">
+                        {prompt}
+                      </li>
+                    ))}
+                  </ul>
+                </Section>
+              </>
+            )}
           </Card>
           
           <Card>

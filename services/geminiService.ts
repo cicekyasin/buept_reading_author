@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type } from '@google/genai';
-import type { LessonPlan, Source, CEFRLevel, ComprehensionQuestion, BueptReadingSection, BueptQuestion } from '../types';
+import type { LessonPlan, Source, CEFRLevel, ComprehensionQuestion, BueptReadingSection, BueptQuestion, CefrAnalysisResult } from '../types';
 
 // FIX: Initialize the GoogleGenAI client. The API key must be read from `process.env.API_KEY`.
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
@@ -73,8 +73,58 @@ const lessonPlanSchema = {
         required: ['question', 'type', 'answer'],
       },
     },
+    writingPrompts: {
+        type: Type.ARRAY,
+        description: "A list of 1-2 creative writing prompts related to the passage. The prompts should encourage students to use the key vocabulary and target grammatical structures from the lesson. They must be appropriate for the target CEFR level.",
+        items: { type: Type.STRING }
+    }
   },
-  required: ['title', 'cefrLevel', 'pedagogicalRationale', 'readingPassage', 'keyVocabulary', 'comprehensionQuestions'],
+  required: ['title', 'cefrLevel', 'pedagogicalRationale', 'readingPassage', 'keyVocabulary', 'comprehensionQuestions', 'writingPrompts'],
+};
+
+/**
+ * Provides a detailed linguistic profile for a given CEFR level to guide the AI.
+ * This is based on principles from readability tests like Flesch-Kincaid, focusing on
+ * sentence length, word complexity, and grammatical structures.
+ * @param level The target CEFR level.
+ * @returns A string of instructions for the AI.
+ */
+const getCefrLinguisticProfile = (level: CEFRLevel): string => {
+  const baseLevel = level.substring(0, 2); // A1, A2, B1, B2
+  
+  switch (baseLevel) {
+    case 'A1':
+      return `
+        - **Vocabulary:** Strictly limit vocabulary to the top 1000 most frequent English words. Use only concrete nouns and basic verbs. Avoid all idioms, phrasal verbs, and abstract concepts.
+        - **Sentence Structure:** Construct only simple sentences (one independent clause). Target an average sentence length of 8-10 words. Maximum sentence length must not exceed 15 words. Use 'and', 'but', and 'because' for simple connections.
+        - **Grammar:** Use only Present Simple, Present Continuous, and 'can/can't'. Avoid past tenses and future forms.
+        - **Flesch Reading Ease Score:** The passage MUST score between 90 and 100 on the Flesch Reading Ease scale. This is a hard constraint.
+      `;
+    case 'A2':
+      return `
+        - **Vocabulary:** Primarily use words from the top 2000 most frequent English words. Introduce a few common, easily understandable phrasal verbs (e.g., 'get up', 'look for').
+        - **Sentence Structure:** Use a mix of simple and compound sentences. Target an average sentence length of 10-14 words. Introduce simple subordinate clauses with 'when' and 'if' (zero conditional).
+        - **Grammar:** Use Past Simple (regular and common irregular verbs), Present Perfect for life experiences ('I have been to...'), and 'be going to' for future plans.
+        - **Flesch Reading Ease Score:** The passage MUST score between 80 and 90 on the Flesch Reading Ease scale. This is a hard constraint.
+      `;
+    case 'B1':
+      return `
+        - **Vocabulary:** Use a broad range of vocabulary (top 3000 words). Introduce some abstract nouns (e.g., 'advantage', 'difficulty') and more descriptive adjectives. Some common, transparent idioms are acceptable if context makes the meaning clear.
+        - **Sentence Structure:** Employ a mix of simple, compound, and complex sentences. Target an average sentence length of 14-18 words. Sentences should include relative clauses ('who', 'which', 'that') and conditional clauses (first and second conditionals).
+        - **Grammar:** Must demonstrate correct use of Present Perfect (for recent past/unfinished actions), Past Continuous, and conditionals. Introduce the simple passive voice (e.g., 'The book was written by...').
+        - **Flesch Reading Ease Score:** The passage MUST score between 60 and 70 on the Flesch Reading Ease scale (equivalent to 8th-9th grade level). This is a hard constraint.
+      `;
+    case 'B2':
+      return `
+        - **Vocabulary:** Use a wide and varied lexical range, including less frequent words, nuanced shades of meaning, and common idiomatic expressions.
+        - **Sentence Structure:** Utilize complex and varied sentence structures. Target an average sentence length of 18-25 words, but ensure variety. Include participial clauses, reported speech, and a range of subordinate clauses to express complex relationships between ideas.
+        - **Grammar:** Demonstrate a strong command of tenses, including Past Perfect and mixed conditionals. Use a wide range of modal verbs to express speculation, deduction, and advice. Employ the passive voice in various tenses.
+        - **Flesch Reading Ease Score:** The passage MUST score between 50 and 60 on the Flesch Reading Ease scale (equivalent to 10th-12th grade level). This is a hard constraint.
+      `;
+    default:
+      // Fallback for levels like A1+, B1-, etc. to their base level
+      return getCefrLinguisticProfile(baseLevel as CEFRLevel);
+  }
 };
 
 
@@ -100,6 +150,7 @@ export const generateLessonPlan = async (
       paragraphInstruction = `**Passage Structure:** The passage should have an introduction, at least 3-4 well-developed body paragraphs, and a conclusion. ${structureExample('3-4+ body paragraphs')}`;
   }
 
+  const linguisticProfile = getCefrLinguisticProfile(cefrLevel);
 
   const prompt = `
     Generate a complete EFL/ESL lesson plan for a reading passage.
@@ -107,6 +158,9 @@ export const generateLessonPlan = async (
     **Topic:** "${topic}"
     **Target CEFR Level:** ${cefrLevel}
     **Approximate Passage Word Count:** ${passageLength} words.
+
+    **CEFR Linguistic Profile (CRITICAL):** You must strictly adhere to the following linguistic constraints for the target CEFR level when writing the reading passage. This is the most important instruction.
+    ${linguisticProfile}
     
     ${customVocabulary ? `**Required Vocabulary:** You MUST naturally integrate the following comma-separated words into the reading passage: "${customVocabulary}". The words must be used in a way that is contextually appropriate for the topic and linguistically appropriate for the target CEFR level. If a word is too advanced, you may use a simpler form of it if appropriate, but you must still use the word.` : ''}
     ${pedagogicalFocus ? `**Core Pedagogical Focus:** "${pedagogicalFocus}"` : ''}
@@ -115,14 +169,15 @@ export const generateLessonPlan = async (
 
     **Instructions:**
     1.  **Title:** Create a catchy title related to the topic.
-    2.  **Pedagogical Rationale:** Write a short (2-4 sentences) rationale explaining why this lesson is appropriate for the ${cefrLevel} level. It should explain how the sentence structure and vocabulary choices align with Second Language Acquisition (SLA) principles. ${pedagogicalFocus ? `Critically, it must also explain how the lesson addresses the Core Pedagogical Focus.` : ''} ${customVocabulary ? `It must also mention how the required vocabulary was integrated.` : ''}
-    3.  **Reading Passage:** Write a highly engaging, narrative-driven reading passage on the specified topic. The passage should tell a simple story or describe a vivid scene to captivate the reader. It must have a clear flow with a beginning, middle, and end. If characters are included, give them relatable motivations. The topic "${topic}" must be central to the narrative. ${paragraphInstruction} Crucially, the passage must be carefully crafted to match the grammatical complexity, vocabulary, and sentence structure appropriate for a ${cefrLevel} learner, and its length should be approximately ${passageLength} words. ${customVocabulary ? `**CRITICAL CONSTRAINT:** The passage MUST include and naturally weave in the following words: ${customVocabulary}.` : ''}
+    2.  **Pedagogical Rationale:** Write a short (2-4 sentences) rationale explaining why this lesson is appropriate for the ${cefrLevel} level. It should explain how the sentence structure and vocabulary choices align with Second Language Acquisition (SLA) principles and the specific CEFR Linguistic Profile provided. ${pedagogicalFocus ? `Critically, it must also explain how the lesson addresses the Core Pedagogical Focus.` : ''} ${customVocabulary ? `It must also mention how the required vocabulary was integrated.` : ''}
+    3.  **Reading Passage:** Write a highly engaging, narrative-driven reading passage on the specified topic. The passage should tell a simple story or describe a vivid scene to captivate the reader. It must have a clear flow with a beginning, middle, and end. If characters are included, give them relatable motivations. The topic "${topic}" must be central to the narrative. ${paragraphInstruction} Crucially, the passage must be carefully crafted to match the grammatical complexity, vocabulary, and sentence structure outlined in the CEFR Linguistic Profile, and its length should be approximately ${passageLength} words. ${customVocabulary ? `**CRITICAL CONSTRAINT:** The passage MUST include and naturally weave in the following words: ${customVocabulary}.` : ''}
     4.  **Key Vocabulary:** Identify 5-7 key Tier 2 vocabulary words from the passage. For each word, provide its part of speech, a simple definition, and a new example sentence.
-    5.  **Comprehension Questions:** Create exactly ${numberOfQuestions} questions to check understanding. The difficulty and linguistic complexity of these questions MUST be calibrated to the target ${cefrLevel} level. 
-        **CRITICAL:** Generate a balanced mix of the following three question types:
+    5.  **Comprehension Questions:** Create exactly ${numberOfQuestions} questions to check understanding. The difficulty and linguistic complexity of these questions MUST be calibrated to the target ${cefrLevel} level.
+        **CRITICAL:** Generate a balanced mix of the following three question types. The questions in the final JSON array must be ordered by type: all 'true-false' questions first, then all 'multiple-choice' questions, then all 'short-answer' questions.
         *   **'true-false':** A statement that the student must verify as true or false based on the text. The 'answer' must be either "True" or "False".
         *   **'multiple-choice':** A question with four plausible options. Provide the options in the 'options' array. The 'answer' must be one of the provided options. The options should be well-designed distractors.
         *   **'short-answer':** An open-ended question that requires a brief, precise answer from the text. The 'answer' should be the concise, correct response.
+    6.  **Writing Prompts:** Create 1-2 creative writing prompts based on the passage's theme. These prompts MUST encourage the student to use some of the key vocabulary and the grammatical structures relevant to the ${cefrLevel} level (e.g., if the focus is past tense, the prompt should naturally lead to a narrative in the past).
 
     ${advancedInstructions ? `**Additional Instructions:** ${advancedInstructions}` : ''}
 
@@ -157,6 +212,103 @@ export const generateLessonPlan = async (
     throw new Error('Failed to generate lesson plan. Please try again.');
   }
 };
+
+const cefrAnalysisSchema = {
+    type: Type.OBJECT,
+    properties: {
+        estimatedLevel: { type: Type.STRING, description: 'The estimated CEFR level of the passage (e.g., "A2", "B1+").' },
+        justification: { type: Type.STRING, description: 'A brief, 1-2 sentence justification for the estimated level, referencing vocabulary, sentence structure, and grammar.' },
+    },
+    required: ['estimatedLevel', 'justification'],
+};
+
+export const analyzePassageCefrLevel = async (passage: string, originalLevel: CEFRLevel): Promise<CefrAnalysisResult> => {
+    const prompt = `
+        You are a CEFR level assessment expert for EFL/ESL materials. Analyze the following text and provide a CEFR level assessment. 
+        The passage was originally generated for a target level of **${originalLevel}**. Your analysis should determine if it successfully meets this target.
+        
+        Justify your rating based on its vocabulary (word frequency, abstract vs. concrete), grammatical structures (tense usage, complexity), and sentence complexity (length, use of clauses).
+        
+        **Passage to Analyze:**
+        "${passage}"
+        
+        Return the result as a single, raw JSON object. Do not wrap it in markdown.
+    `;
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: prompt,
+            config: {
+                responseMimeType: 'application/json',
+                responseSchema: cefrAnalysisSchema,
+            },
+        });
+        const jsonText = response.text.trim();
+        return JSON.parse(jsonText) as CefrAnalysisResult;
+    } catch (error) {
+        console.error('Error analyzing passage:', error);
+        throw new Error('Failed to analyze the generated passage.');
+    }
+};
+
+export const refinePassage = async (
+    originalLessonPlan: LessonPlan,
+    refinementDirection: 'simpler' | 'more complex',
+    originalParams: {
+        topic: string;
+        passageLength: number;
+        numberOfQuestions: number;
+    }
+): Promise<LessonPlan> => {
+    const prompt = `
+        You are an expert EFL/ESL curriculum designer. Your task is to refine an existing reading passage and its associated lesson materials.
+
+        **Refinement Direction:** Make the passage and questions **${refinementDirection}**.
+
+        **Original Lesson Plan:**
+        - Title: ${originalLessonPlan.title}
+        - Original Target CEFR Level: ${originalLessonPlan.cefrLevel}
+        - Original Reading Passage: "${originalLessonPlan.readingPassage}"
+
+        **Instructions:**
+        1.  **Rewrite the Reading Passage:**
+            - Keep the core topic ("${originalParams.topic}") and the main narrative/informational points the same.
+            - Adjust the vocabulary, sentence length, and grammatical complexity according to the refinement direction.
+            - If making it **'simpler'**, use more frequent words (e.g., from top 2000 words), shorten complex sentences, and simplify grammatical structures (e.g., reduce passive voice or complex clauses).
+            - If making it **'more complex'**, introduce more nuanced or less frequent vocabulary, and use more varied and complex sentence structures (e.g., subordinate clauses, varied tenses).
+            - The new passage should still be approximately **${originalParams.passageLength}** words.
+
+        2.  **Update CEFR Level:** Based on your refinement, determine the new, most appropriate CEFR level for the rewritten passage (e.g., if the original was B1 and you made it simpler, the new level might be B1- or A2+). This is a critical step.
+
+        3.  **Update Key Vocabulary:** Select 5-7 new Tier 2 vocabulary words from the **REFINED** passage that are appropriate for the new difficulty level. Provide definitions and new example sentences.
+
+        4.  **Rewrite Comprehension Questions:** Create exactly **${originalParams.numberOfQuestions}** new questions that match the content and linguistic level of the **REFINED** passage. Maintain a balanced mix of 'true-false', 'multiple-choice', and 'short-answer' question types, ordered by type in the final array.
+        
+        5.  **Update Pedagogical Rationale:** Briefly update the rationale to reflect the changes made and justify the new CEFR level.
+
+        6.  **Rewrite Writing Prompts:** Create 1-2 new writing prompts that are aligned with the content and linguistic level of the **REFINED** passage and vocabulary.
+
+        Return the complete, refined lesson plan as a single, raw JSON object that conforms to the schema. Do not wrap it in markdown.
+    `;
+
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: prompt,
+            config: {
+                responseMimeType: 'application/json',
+                responseSchema: lessonPlanSchema,
+                temperature: 0.7,
+            },
+        });
+        const jsonText = response.text.trim();
+        return JSON.parse(jsonText) as LessonPlan;
+    } catch (error) {
+        console.error('Error refining lesson plan:', error);
+        throw new Error('Failed to refine the lesson plan. Please try again.');
+    }
+};
+
 
 export const findSourcesForPassage = async (
   passage: string

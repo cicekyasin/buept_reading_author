@@ -121,6 +121,23 @@ const InputForm: React.FC<InputFormProps> = ({
     </svg>
   );
 
+  const getTimeLeftText = (timestamp: number) => {
+    const now = Date.now();
+    const diffMs = timestamp - now;
+    if (diffMs <= 0) return 'soon';
+    
+    const hours = Math.floor(diffMs / (1000 * 60 * 60));
+    const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+
+    if (hours > 0) {
+        return `in ~${hours}h ${minutes}m`;
+    }
+    if (minutes > 0) {
+        return `in ~${minutes}m`;
+    }
+    return 'soon';
+  };
+
   const getCreditStatus = () => {
     if (isDevMode) {
       return { canGenerate: true, message: "Generate Lesson Plan" };
@@ -132,8 +149,8 @@ const InputForm: React.FC<InputFormProps> = ({
     if (credits.system === 'simple') {
       const canGenerate = credits.shared >= credits.costs.lessonPlan;
       const buttonText = canGenerate 
-        ? `Generate Lesson Plan (${credits.costs.lessonPlan} Credits)`
-        : `Not Enough Credits`;
+        ? `Generate Lesson Plan (${credits.shared}/${credits.limits.daily} Left)`
+        : `Out of Credits (Resets ${getTimeLeftText(credits.nextResetTimestamp)})`;
       return { canGenerate, message: buttonText };
     }
     
@@ -141,7 +158,7 @@ const InputForm: React.FC<InputFormProps> = ({
       const canGenerate = credits.lessonPlan.remaining > 0;
       const buttonText = canGenerate 
         ? `Generate Lesson Plan (${credits.lessonPlan.remaining}/${credits.lessonPlan.total} Left)`
-        : `No Generations Left Today`;
+        : `No Generations Left (Resets ${getTimeLeftText(credits.lessonPlan.nextResetTimestamp)})`;
       return { canGenerate, message: buttonText };
     }
 

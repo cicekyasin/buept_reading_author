@@ -14,9 +14,6 @@ interface QuestionCustomizationModalProps {
   onConfirm: () => void;
   passageLength: number;
   setPassageLength: (length: number) => void;
-  numberOfQuestions: number;
-  setNumberOfQuestions: (num: number) => void;
-  maxQuestions: number;
 }
 
 const QuestionCustomizationModal: React.FC<QuestionCustomizationModalProps> = ({
@@ -25,9 +22,6 @@ const QuestionCustomizationModal: React.FC<QuestionCustomizationModalProps> = ({
   onConfirm,
   passageLength,
   setPassageLength,
-  numberOfQuestions,
-  setNumberOfQuestions,
-  maxQuestions,
 }) => {
   if (!isOpen) {
     return null;
@@ -50,7 +44,7 @@ const QuestionCustomizationModal: React.FC<QuestionCustomizationModalProps> = ({
             Customize Your Lesson
           </h2>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            Choose the desired length for the passage and number of questions.
+            Choose the desired length for the reading passage. The number of questions will be adjusted automatically.
           </p>
         </div>
         <div className="px-6 pb-6 space-y-6 border-t border-slate-200 dark:border-slate-700 pt-6">
@@ -75,22 +69,6 @@ const QuestionCustomizationModal: React.FC<QuestionCustomizationModalProps> = ({
                   </button>
                 ))}
               </div>
-            </div>
-
-            <div>
-              <label htmlFor="modal-question-count" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                Number of Questions ({numberOfQuestions} / {maxQuestions})
-              </label>
-              <input
-                id="modal-question-count"
-                type="range"
-                min="3"
-                max={maxQuestions}
-                step="1"
-                value={numberOfQuestions}
-                onChange={(e) => setNumberOfQuestions(Number(e.target.value))}
-                className="w-full h-2 bg-slate-200 dark:bg-slate-600 rounded-lg appearance-none cursor-pointer"
-              />
             </div>
         </div>
         

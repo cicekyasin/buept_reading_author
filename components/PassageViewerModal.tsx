@@ -5,6 +5,7 @@ import CollapseIcon from './icons/CollapseIcon';
 import BookOpenIcon from './icons/BookOpenIcon';
 import QuestionMarkCircleIcon from './icons/QuestionMarkCircleIcon';
 import PdfIcon from './icons/PdfIcon';
+import PencilSquareIcon from './icons/PencilSquareIcon';
 
 interface PassageViewerModalProps {
   isOpen: boolean;
@@ -63,14 +64,15 @@ const PassageViewerModal: React.FC<PassageViewerModalProps> = ({ isOpen, onClose
     const maxLineWidth = pageWidth - margin * 2;
     let yPos = margin;
 
-    const addTextWithWrap = (text: string, options: { size?: number, style?: 'normal' | 'bold' | 'italic', color?: string | number } = {}) => {
-      const { size = 11, style = 'normal', color = '#000000' } = options;
+    const addTextWithWrap = (text: string, options: { size?: number, style?: 'normal' | 'bold' | 'italic', color?: string | number, isListItem?: boolean } = {}) => {
+      const { size = 11, style = 'normal', color = '#000000', isListItem = false } = options;
       
       doc.setFont('Helvetica', style);
       doc.setFontSize(size);
        if (typeof color === 'string') doc.setTextColor(color); else doc.setTextColor(Number(color));
 
-      const splitText = doc.splitTextToSize(text, maxLineWidth);
+      const prefix = isListItem ? "•  " : "";
+      const splitText = doc.splitTextToSize(prefix + text, maxLineWidth - (isListItem ? 3 : 0));
       const textBlockHeight = doc.getTextDimensions(splitText).h;
 
       if (yPos + textBlockHeight > pageHeight - margin) {
@@ -78,7 +80,7 @@ const PassageViewerModal: React.FC<PassageViewerModalProps> = ({ isOpen, onClose
         yPos = margin;
       }
       
-      doc.text(splitText, margin, yPos);
+      doc.text(splitText, margin + (isListItem ? 3 : 0), yPos);
       yPos += textBlockHeight + (size / 3.5);
     };
     
@@ -90,7 +92,58 @@ const PassageViewerModal: React.FC<PassageViewerModalProps> = ({ isOpen, onClose
     
     addTextWithWrap("Reading Passage", { size: 16, style: 'bold' });
     yPos -= 2;
-    lessonPlan.readingPassage.split('\n\n').forEach(p => addTextWithWrap(p, { size: 11 }));
+
+    const addStyledParagraph = (paragraph: string) => {
+        if (!paragraph.trim()) return;
+
+        const { keyVocabulary } = lessonPlan;
+        const wordsToHighlight = keyVocabulary.map(v => v.word);
+        const escapedWords = wordsToHighlight.map(word => word.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&'));
+        const regex = new RegExp(`(\\b(?:${escapedWords.join('|')})\\b)`, 'gi');
+
+        const parts = paragraph.split(regex).filter(p => p);
+
+        const fontSize = 11;
+        doc.setFontSize(fontSize);
+        const lineHeight = doc.getTextDimensions('M').h * 1.15;
+        
+        let currentX = margin;
+
+        if (yPos + lineHeight > pageHeight - margin) {
+            doc.addPage();
+            yPos = margin;
+        }
+
+        parts.forEach(part => {
+            const isHighlight = wordsToHighlight.some(w => w.toLowerCase() === part.toLowerCase());
+            
+            doc.setFont('Helvetica', isHighlight ? 'bold' : 'normal');
+            doc.setTextColor(isHighlight ? '#003366' : '#000000');
+
+            const words = part.split(/(\s+)/).filter(w => w.length > 0);
+
+            words.forEach(word => {
+                const wordWidth = doc.getStringUnitWidth(word) * fontSize / doc.internal.scaleFactor;
+                
+                if (currentX > margin && currentX + wordWidth > maxLineWidth) {
+                    yPos += lineHeight;
+                    currentX = margin;
+                    if (yPos + lineHeight > pageHeight - margin) {
+                        doc.addPage();
+                        yPos = margin;
+                    }
+                }
+
+                doc.text(word, currentX, yPos, { flags: { underline: isHighlight } });
+                currentX += wordWidth;
+            });
+        });
+
+        doc.setTextColor('#000000');
+        yPos += lineHeight;
+    };
+    
+    lessonPlan.readingPassage.split('\n\n').forEach(p => addStyledParagraph(p.trim()));
     yPos += 10;
 
     addTextWithWrap("Comprehension Questions", { size: 16, style: 'bold' });
@@ -116,6 +169,16 @@ const PassageViewerModal: React.FC<PassageViewerModalProps> = ({ isOpen, onClose
     renderQuestions(categorizedQuestions?.['true-false'], "True / False");
     renderQuestions(categorizedQuestions?.['multiple-choice'], "Multiple Choice");
     renderQuestions(categorizedQuestions?.['short-answer'], "Short Answer");
+
+    if (lessonPlan.writingPrompts && lessonPlan.writingPrompts.length > 0) {
+        yPos += 5;
+        addTextWithWrap("Writing Prompts", { size: 16, style: 'bold' });
+         yPos -= 2;
+        lessonPlan.writingPrompts.forEach(prompt => {
+            addTextWithWrap(prompt, { size: 11, isListItem: true });
+        });
+    }
+
 
     doc.save(`${lessonPlan.title.replace(/[\s\W]+/g, '_')}.pdf`);
   };
@@ -197,6 +260,21 @@ const PassageViewerModal: React.FC<PassageViewerModalProps> = ({ isOpen, onClose
                         </div>
                     )}
                 </div>
+
+                {lessonPlan.writingPrompts && lessonPlan.writingPrompts.length > 0 && (
+                  <>
+                    <hr className="my-8" />
+                    <div className="flex items-center mb-4">
+                        <span className="text-boun-light-blue dark:text-blue-400"><PencilSquareIcon className="w-7 h-7" /></span>
+                        <h3 className="ml-3 text-2xl font-semibold text-slate-800 dark:text-slate-200 not-prose">Writing Prompts</h3>
+                    </div>
+                    <ul className="list-disc list-inside space-y-2">
+                        {lessonPlan.writingPrompts.map((prompt, i) => (
+                            <li key={i}>{prompt}</li>
+                        ))}
+                    </ul>
+                  </>
+                )}
             </article>
         </div>
       </div>

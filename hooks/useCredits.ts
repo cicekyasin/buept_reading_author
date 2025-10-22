@@ -9,9 +9,9 @@ const LOCAL_STORAGE_KEY_COMPLEX = 'fled-credits-complex';
 
 // --- SYSTEM CONFIGS ---
 const SIMPLE_SYSTEM_CONFIG = {
-  DAILY_LIMIT: 5,
+  DAILY_LIMIT: 2,
   COSTS: {
-    lessonPlan: 2,
+    lessonPlan: 1,
     buept: 1,
   },
 };
@@ -40,13 +40,19 @@ type ComplexCreditData = {
   };
 };
 
-// --- HELPER ---
+// --- HELPERS ---
 const isSameDay = (ts1: number, ts2: number) => {
     const d1 = new Date(ts1);
     const d2 = new Date(ts2);
     return d1.getUTCFullYear() === d2.getUTCFullYear() &&
            d1.getUTCMonth() === d2.getUTCMonth() &&
            d1.getUTCDate() === d2.getUTCDate();
+};
+
+const getNextResetTimestamp = (timestamp: number): number => {
+    const d = new Date(timestamp);
+    const tomorrow = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1));
+    return tomorrow.getTime();
 };
 
 export const useCredits = (isDevMode = false, systemMode: CreditSystemMode = 'simple') => {
@@ -58,6 +64,7 @@ export const useCredits = (isDevMode = false, systemMode: CreditSystemMode = 'si
     const now = Date.now();
     
     if (systemMode === 'simple') {
+      const nextReset = getNextResetTimestamp(now);
       try {
         const saved = localStorage.getItem(LOCAL_STORAGE_KEY_SIMPLE);
         if (saved) {
@@ -68,6 +75,7 @@ export const useCredits = (isDevMode = false, systemMode: CreditSystemMode = 'si
               shared: data.credits,
               limits: { daily: SIMPLE_SYSTEM_CONFIG.DAILY_LIMIT },
               costs: SIMPLE_SYSTEM_CONFIG.COSTS,
+              nextResetTimestamp: getNextResetTimestamp(data.lastResetTimestamp),
             });
             setIsLoading(false);
             return;
@@ -81,7 +89,8 @@ export const useCredits = (isDevMode = false, systemMode: CreditSystemMode = 'si
         system: 'simple', 
         shared: initialData.credits, 
         limits: { daily: SIMPLE_SYSTEM_CONFIG.DAILY_LIMIT },
-        costs: SIMPLE_SYSTEM_CONFIG.COSTS
+        costs: SIMPLE_SYSTEM_CONFIG.COSTS,
+        nextResetTimestamp: nextReset,
       });
     } 
     
@@ -93,7 +102,8 @@ export const useCredits = (isDevMode = false, systemMode: CreditSystemMode = 'si
         } catch(e) { console.error(e); }
 
         // Lesson Plan credits (reset daily)
-        const lessonPlanCreditsUsed = (data?.lessonPlan && isSameDay(data.lessonPlan.lastResetTimestamp, now)) 
+        const lastReset = data?.lessonPlan?.lastResetTimestamp || 0;
+        const lessonPlanCreditsUsed = (data?.lessonPlan && isSameDay(lastReset, now)) 
             ? data.lessonPlan.count 
             : 0;
         
@@ -110,6 +120,7 @@ export const useCredits = (isDevMode = false, systemMode: CreditSystemMode = 'si
             lessonPlan: {
                 remaining: COMPLEX_SYSTEM_CONFIG.LESSON_PLAN_DAILY_LIMIT - lessonPlanCreditsUsed,
                 total: COMPLEX_SYSTEM_CONFIG.LESSON_PLAN_DAILY_LIMIT,
+                nextResetTimestamp: getNextResetTimestamp(now),
             },
             bueptReading1: {
                 available: r1Available,

@@ -29,11 +29,17 @@ export interface LessonPlan {
   readingPassage: string;
   keyVocabulary: VocabularyWord[];
   comprehensionQuestions: ComprehensionQuestion[];
+  writingPrompts: string[];
 }
 
 export interface Source {
   uri: string;
   title: string;
+}
+
+export interface CefrAnalysisResult {
+  estimatedLevel: string;
+  justification: string;
 }
 
 // BUEPT Exam Types
