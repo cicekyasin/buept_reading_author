@@ -1,7 +1,8 @@
+
+
 import React, { useState } from 'react';
 import { jsPDF } from 'jspdf';
-import type { Language, BueptReadingSection, UserAnswers, GradingResults, GradingResult } from '../types';
-import { UI_TEXT } from '../translations';
+import type { BueptReadingSection, UserAnswers, GradingResults, GradingResult } from '../types';
 import Loader from './Loader';
 import InteractiveReadingSection from './InteractiveReadingSection';
 import ClipboardCheckIcon from './icons/ClipboardCheckIcon';
@@ -13,7 +14,10 @@ import CheckCircleIcon from './icons/CheckCircleIcon';
 import { gradeOpenEndedAnswer, generateBueptSection } from '../services/geminiService';
 
 interface ExamGeneratorProps {
-  language: Language;
+  credits: any; // Can be simple or complex credit object
+  isCreditsLoading: boolean;
+  deductCredits: (type: 'lessonPlan' | 'bueptReading1' | 'bueptReading2') => void;
+  isDevMode: boolean;
 }
 
 type View = 'selection' | 'choice' | 'test';
@@ -22,7 +26,7 @@ type GeneratedSectionData = {
     section: BueptReadingSection;
 };
 
-const ExamGenerator: React.FC<ExamGeneratorProps> = ({ language }) => {
+const ExamGenerator: React.FC<ExamGeneratorProps> = ({ credits, isCreditsLoading, deductCredits, isDevMode }) => {
   const [view, setView] = useState<View>('selection');
   const [isLoading, setIsLoading] = useState<'reading1' | 'reading2' | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -33,11 +37,52 @@ const ExamGenerator: React.FC<ExamGeneratorProps> = ({ language }) => {
   const [gradingResults, setGradingResults] = useState<GradingResults | null>(null);
   const [isGrading, setIsGrading] = useState<boolean>(false);
 
+  const getButtonStatus = (sectionKey: 'bueptReading1' | 'bueptReading2') => {
+    if (isDevMode) {
+      return { 
+        canGenerate: true, 
+        text: sectionKey === 'bueptReading1' ? 'Generate Reading 1 Practice' : 'Generate Reading 2 Practice'
+      };
+    }
+    if (isCreditsLoading || !credits) {
+      return { canGenerate: false, text: 'Loading Credits...' };
+    }
+    
+    if (credits.system === 'simple') {
+      const canGenerate = credits.shared >= credits.costs.buept;
+      const buttonText = canGenerate 
+        ? `${sectionKey === 'bueptReading1' ? 'Generate Reading 1' : 'Generate Reading 2'} (${credits.costs.buept} Credit)`
+        : `Not Enough Credits`;
+      return { canGenerate, text: buttonText };
+    }
+    
+    if (credits.system === 'complex') {
+      const sectionCredit = credits[sectionKey];
+      if (sectionCredit.available) {
+        return { canGenerate: true, text: `${sectionKey === 'bueptReading1' ? 'Generate Reading 1' : 'Generate Reading 2'} (1 Left)` };
+      } else {
+        const hoursLeft = Math.ceil((sectionCredit.cooldownEndsTimestamp - Date.now()) / (1000 * 60 * 60));
+        return { 
+          canGenerate: false, 
+          text: `On Cooldown (~${Math.max(0, hoursLeft)}h left)` 
+        };
+      }
+    }
+
+    return { canGenerate: false, text: 'Invalid Credit System' };
+  };
+
   const handleGenerateSection = async (sectionKey: 'reading1' | 'reading2') => {
+    const { canGenerate } = getButtonStatus(sectionKey === 'reading1' ? 'bueptReading1' : 'bueptReading2');
+    if (!canGenerate) {
+      return;
+    }
+
     setIsLoading(sectionKey);
     setError(null);
     try {
       const sectionData = await generateBueptSection(sectionKey);
+      deductCredits(sectionKey === 'reading1' ? 'bueptReading1' : 'bueptReading2');
       setGeneratedSectionData({ key: sectionKey, section: sectionData });
       setUserAnswers({}); // Reset answers
       setGradingResults(null); // Reset results
@@ -45,7 +90,7 @@ const ExamGenerator: React.FC<ExamGeneratorProps> = ({ language }) => {
     } catch (err) {
       console.error(err);
       const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
-      setError(`Failed to generate BUEPT section. ${errorMessage}`);
+      setError(errorMessage);
     } finally {
       setIsLoading(null);
     }
@@ -81,7 +126,10 @@ const ExamGenerator: React.FC<ExamGeneratorProps> = ({ language }) => {
   };
 
   const handleDownloadPracticePdf = () => {
-    if (!generatedSectionData) return;
+    if (!generatedSectionData?.section?.title) {
+        console.error("Cannot generate PDF: Section data or title is missing.");
+        return;
+    }
     const { section } = generatedSectionData;
 
     const doc = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
@@ -130,11 +178,14 @@ const ExamGenerator: React.FC<ExamGeneratorProps> = ({ language }) => {
     yPos += 5;
 
     // Passage Title
-    addTextWithWrap(UI_TEXT.passageTitle[language], { size: 14, style: 'bold' });
+    addTextWithWrap("Reading Passage", { size: 14, style: 'bold' });
     yPos += 2;
 
     // Passage Content
-    const passageParts = section.passage.split(/(\[P\d+\])/).filter(part => part.trim());
+    const passageParts = (Array.isArray(section.passage) ? section.passage.join('\n\n') : section.passage)
+        .split(/(\[P\d+\])/)
+        .filter(part => part.trim());
+
     passageParts.forEach(part => {
         const trimmedPart = part.trim();
         if (trimmedPart.match(/^\[P\d+\]/)) {
@@ -151,7 +202,7 @@ const ExamGenerator: React.FC<ExamGeneratorProps> = ({ language }) => {
     yPos += 8;
 
     // Questions Title
-    addTextWithWrap(UI_TEXT.questionsTitle[language], { size: 14, style: 'bold' });
+    addTextWithWrap("Comprehension Questions", { size: 14, style: 'bold' });
     yPos += 2;
 
     // Questions Content
@@ -182,72 +233,97 @@ const ExamGenerator: React.FC<ExamGeneratorProps> = ({ language }) => {
     doc.save(`${section.title.replace(/[\s\W]+/g, '_')}_Practice.pdf`);
   };
 
-  const renderSelectionView = () => (
+  const renderSelectionView = () => {
+    const r1Status = getButtonStatus('bueptReading1');
+    const r2Status = getButtonStatus('bueptReading2');
+
+    return (
      <div className="p-8 bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg text-center">
         <ClipboardCheckIcon className="w-12 h-12 mx-auto text-slate-400 dark:text-slate-500" />
-        <h2 className="mt-4 text-2xl font-bold text-slate-900 dark:text-slate-100">{UI_TEXT.bueptGeneratorTitle[language]}</h2>
-        <p className="mt-2 max-w-xl mx-auto text-slate-500 dark:text-slate-400">{UI_TEXT.bueptGeneratorSubtitle[language]}</p>
+        <h2 className="mt-4 text-2xl font-bold text-slate-900 dark:text-slate-100">BUEPT Practice Exam Generator</h2>
+        <p className="mt-2 max-w-xl mx-auto text-slate-500 dark:text-slate-400">Generate a practice section for the BUEPT-style reading exam on-demand.</p>
         
         {error && (
             <div className="mt-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-lg text-left">
-                <h3 className="font-semibold text-red-800 dark:text-red-200">{UI_TEXT.generationFailed[language]}</h3>
+                <h3 className="font-semibold text-red-800 dark:text-red-200">Generation Failed</h3>
                 <p className="mt-1 text-sm text-red-700 dark:text-red-300">{error}</p>
             </div>
         )}
 
         <div className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-6 max-w-3xl mx-auto">
-          <div className="p-6 bg-slate-50 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 flex flex-col items-center justify-between">
-            <BookOpenIcon className="w-10 h-10 mx-auto text-boun-blue dark:text-blue-400" />
-            <div className="my-4">
-              <h3 className="font-semibold text-slate-800 dark:text-slate-200">{UI_TEXT.bueptReading1Title[language]}</h3>
-              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">45 {UI_TEXT.bueptMinutes[language]}</p>
-            </div>
+          <div>
             <button
                 onClick={() => handleGenerateSection('reading1')}
-                disabled={!!isLoading}
-                className="w-full flex justify-center items-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-boun-light-blue hover:bg-opacity-90 focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-slate-800 focus:ring-boun-light-blue disabled:bg-opacity-50 disabled:cursor-not-allowed"
+                disabled={!!isLoading || isCreditsLoading || !r1Status.canGenerate}
+                className="group p-6 bg-slate-50 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 flex flex-col items-center justify-between text-center transition-all duration-200 hover:bg-slate-100 hover:dark:bg-slate-700/50 hover:border-boun-light-blue focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-slate-900 focus:ring-boun-light-blue disabled:opacity-50 disabled:cursor-not-allowed min-h-[240px] w-full"
             >
                 {isLoading === 'reading1' ? (
-                    <>
-                        <div className="w-5 h-5 border-2 border-white/50 border-t-white rounded-full animate-spin mr-2"></div>
-                        {UI_TEXT.bueptGeneratingButton[language]}
-                    </>
+                    <div className="flex flex-col items-center justify-center flex-grow">
+                        <div className="w-8 h-8 border-4 border-slate-300 dark:border-slate-600 border-t-boun-light-blue rounded-full animate-spin"></div>
+                        <p className="mt-4 font-semibold text-slate-600 dark:text-slate-300">Generating Section...</p>
+                    </div>
                 ) : (
-                    UI_TEXT.bueptGenerateReading1[language]
+                    <>
+                        <div className="flex-grow flex flex-col items-center justify-center">
+                            <BookOpenIcon className="w-10 h-10 mx-auto text-boun-blue dark:text-blue-400" />
+                            <div className="my-4">
+                              <h3 className="font-semibold text-slate-800 dark:text-slate-200">Reading 1: Literal Comprehension</h3>
+                              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Suggested Time: 45 minutes</p>
+                            </div>
+                        </div>
+                        <span className={`mt-auto inline-flex items-center justify-center py-2 px-4 rounded-md text-sm font-medium transition-colors duration-200 ${
+                          !r1Status.canGenerate 
+                            ? 'bg-slate-200 text-slate-500 dark:bg-slate-700 dark:text-slate-400'
+                            : 'text-boun-blue dark:text-blue-300 bg-blue-100 dark:bg-blue-900/50 group-hover:bg-boun-light-blue group-hover:text-white'
+                        }`}>
+                          {r1Status.text}
+                        </span>
+                    </>
                 )}
             </button>
           </div>
-           <div className="p-6 bg-slate-50 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 flex flex-col items-center justify-between">
-            <BookOpenIcon className="w-10 h-10 mx-auto text-boun-blue dark:text-blue-400" />
-            <div className="my-4">
-              <h3 className="font-semibold text-slate-800 dark:text-slate-200">{UI_TEXT.bueptReading2Title[language]}</h3>
-              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">50 {UI_TEXT.bueptMinutes[language]}</p>
-            </div>
+          <div>
             <button
                 onClick={() => handleGenerateSection('reading2')}
-                disabled={!!isLoading}
-                className="w-full flex justify-center items-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-boun-light-blue hover:bg-opacity-90 focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-slate-800 focus:ring-boun-light-blue disabled:bg-opacity-50 disabled:cursor-not-allowed"
+                disabled={!!isLoading || isCreditsLoading || !r2Status.canGenerate}
+                className="group p-6 bg-slate-50 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 flex flex-col items-center justify-between text-center transition-all duration-200 hover:bg-slate-100 hover:dark:bg-slate-700/50 hover:border-boun-light-blue focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-slate-900 focus:ring-boun-light-blue disabled:opacity-50 disabled:cursor-not-allowed min-h-[240px] w-full"
             >
-                 {isLoading === 'reading2' ? (
-                    <>
-                        <div className="w-5 h-5 border-2 border-white/50 border-t-white rounded-full animate-spin mr-2"></div>
-                        {UI_TEXT.bueptGeneratingButton[language]}
-                    </>
+                {isLoading === 'reading2' ? (
+                    <div className="flex flex-col items-center justify-center flex-grow">
+                        <div className="w-8 h-8 border-4 border-slate-300 dark:border-slate-600 border-t-boun-light-blue rounded-full animate-spin"></div>
+                        <p className="mt-4 font-semibold text-slate-600 dark:text-slate-300">Generating Section...</p>
+                    </div>
                 ) : (
-                    UI_TEXT.bueptGenerateReading2[language]
+                    <>
+                         <div className="flex-grow flex flex-col items-center justify-center">
+                            <BookOpenIcon className="w-10 h-10 mx-auto text-boun-blue dark:text-blue-400" />
+                            <div className="my-4">
+                              <h3 className="font-semibold text-slate-800 dark:text-slate-200">Reading 2: Inference & Academic Reading</h3>
+                              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Suggested Time: 50 minutes</p>
+                            </div>
+                        </div>
+                        <span className={`mt-auto inline-flex items-center justify-center py-2 px-4 rounded-md text-sm font-medium transition-colors duration-200 ${
+                          !r2Status.canGenerate 
+                            ? 'bg-slate-200 text-slate-500 dark:bg-slate-700 dark:text-slate-400'
+                            : 'text-boun-blue dark:text-blue-300 bg-blue-100 dark:bg-blue-900/50 group-hover:bg-boun-light-blue group-hover:text-white'
+                        }`}>
+                          {r2Status.text}
+                        </span>
+                    </>
                 )}
             </button>
           </div>
         </div>
       </div>
-  );
+    );
+  };
 
   const renderChoiceView = () => {
     if (!generatedSectionData) return null;
     return (
       <div className="p-8 bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg text-center">
         <CheckCircleIcon className="w-12 h-12 mx-auto text-green-500" />
-        <h2 className="mt-4 text-2xl font-bold text-slate-900 dark:text-slate-100">{UI_TEXT.bueptPracticeReadyTitle[language]}</h2>
+        <h2 className="mt-4 text-2xl font-bold text-slate-900 dark:text-slate-100">Your Practice Section is Ready!</h2>
         <p className="mt-2 max-w-xl mx-auto text-slate-500 dark:text-slate-400">
           {generatedSectionData.section.title}
         </p>
@@ -258,14 +334,14 @@ const ExamGenerator: React.FC<ExamGeneratorProps> = ({ language }) => {
                 className="flex-grow flex justify-center items-center py-3 px-6 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-boun-light-blue hover:bg-opacity-90 focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-slate-800 focus:ring-boun-light-blue"
             >
               <PencilIcon className="w-5 h-5 mr-2" />
-              {UI_TEXT.bueptTakeTestOnline[language]}
+              Take Test Online
             </button>
              <button
                 onClick={handleDownloadPracticePdf}
                 className="flex-grow flex justify-center items-center py-3 px-6 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm text-sm font-medium text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-700 hover:bg-slate-50 dark:hover:bg-slate-600 focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-slate-800 focus:ring-boun-light-blue"
             >
               <PdfIcon className="w-5 h-5 mr-2" />
-              {UI_TEXT.bueptDownloadPdf[language]}
+              Download PDF for Offline Practice
             </button>
         </div>
         <button
@@ -273,7 +349,7 @@ const ExamGenerator: React.FC<ExamGeneratorProps> = ({ language }) => {
             className="mt-6 flex items-center mx-auto text-sm font-medium text-slate-500 dark:text-slate-400 hover:text-boun-blue dark:hover:text-blue-400"
         >
             <ArrowLeftIcon className="w-4 h-4 mr-1" />
-            {UI_TEXT.bueptBackToGeneration[language]}
+            Generate Another Section
         </button>
       </div>
     );
@@ -282,7 +358,7 @@ const ExamGenerator: React.FC<ExamGeneratorProps> = ({ language }) => {
   const renderTestView = () => {
     if (!generatedSectionData) return null;
     const { key, section } = generatedSectionData;
-    const title = key === 'reading1' ? UI_TEXT.bueptReading1Title[language] : UI_TEXT.bueptReading2Title[language];
+    const title = key === 'reading1' ? 'Reading 1: Literal Comprehension' : 'Reading 2: Inference & Academic Reading';
     const time = key === 'reading1' ? 45 : 50;
 
     return (
@@ -290,7 +366,6 @@ const ExamGenerator: React.FC<ExamGeneratorProps> = ({ language }) => {
         section={section}
         sectionTitle={title}
         time={time}
-        language={language}
         userAnswers={userAnswers}
         onAnswerChange={(qNum, ans) => setUserAnswers(prev => ({...prev, [qNum]: ans}))}
         gradingResults={gradingResults}

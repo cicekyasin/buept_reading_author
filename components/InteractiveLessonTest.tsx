@@ -1,6 +1,5 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import type { LessonPlan, Language, UserAnswers, GradingResults, ComprehensionQuestion, GradingResult } from '../types';
-import { UI_TEXT } from '../translations';
+import type { LessonPlan, UserAnswers, GradingResults, ComprehensionQuestion, GradingResult } from '../types';
 import XMarkIcon from './icons/XMarkIcon';
 import ArrowRightIcon from './icons/ArrowRightIcon';
 import CheckCircleIcon from './icons/CheckCircleIcon';
@@ -8,7 +7,6 @@ import XCircleIcon from './icons/XCircleIcon';
 
 interface InteractiveLessonTestProps {
   lessonPlan: LessonPlan;
-  language: Language;
   userAnswers: UserAnswers;
   onAnswerChange: (questionNumber: number, answer: string) => void;
   gradingResults: GradingResults | null;
@@ -17,8 +15,12 @@ interface InteractiveLessonTestProps {
   onQuit: () => void;
 }
 
-const formatPassage = (passage: string) => {
-    return passage.split('\n\n').map((paragraph, index) => (
+const formatPassage = (passage: string | string[]) => {
+    const passageText = Array.isArray(passage) ? passage.join('\n\n') : passage;
+    if (typeof passageText !== 'string') {
+        return null;
+    }
+    return passageText.split('\n\n').map((paragraph, index) => (
         <p key={index} className="mb-4 last:mb-0">{paragraph}</p>
     ));
 };
@@ -28,9 +30,8 @@ const InteractiveQuestion: React.FC<{
     qNum: number,
     userAnswer: string, 
     onAnswerChange: (answer: string) => void,
-    gradingResult: GradingResults[number] | null,
-    language: Language
-}> = ({ q, qNum, userAnswer, onAnswerChange, gradingResult, language }) => {
+    gradingResult: GradingResults[number] | null
+}> = ({ q, qNum, userAnswer, onAnswerChange, gradingResult }) => {
     const isGraded = !!gradingResult;
     const isCorrect = gradingResult?.result === 'correct';
 
@@ -54,10 +55,10 @@ const InteractiveQuestion: React.FC<{
                 </fieldset>
             )}
             
-            {q.type === 'multiple-choice' && q.options && (
+            {q.type === 'multiple-choice' && (
                 <fieldset className="mt-3 space-y-2" disabled={isGraded}>
                     <legend className="sr-only">Options for question {qNum}</legend>
-                    {q.options.map((opt, i) => (
+                    {q.options?.map((opt, i) => (
                          <label key={i} className="flex items-start p-2 rounded-md transition-colors hover:bg-slate-100 dark:hover:bg-slate-800/50 has-[:checked]:bg-blue-50 dark:has-[:checked]:bg-blue-900/20">
                             <input type="radio" name={`q-${qNum}`} value={opt} checked={userAnswer === opt} onChange={(e) => onAnswerChange(e.target.value)} className="h-4 w-4 mt-1 text-boun-light-blue border-slate-400 focus:ring-boun-light-blue" />
                             <span className="ml-3 text-sm text-slate-700 dark:text-slate-300">{opt}</span>
@@ -84,13 +85,13 @@ const InteractiveQuestion: React.FC<{
                     <div className="flex items-center">
                         {isCorrect ? <CheckCircleIcon className="w-5 h-5 text-green-600 dark:text-green-500" /> : <XCircleIcon className="w-5 h-5 text-red-600 dark:text-red-500" />}
                         <span className={`ml-2 text-sm font-bold ${isCorrect ? 'text-green-800 dark:text-green-300' : 'text-red-800 dark:text-red-300'}`}>
-                            {isCorrect ? UI_TEXT.lessonTestCorrect[language] : UI_TEXT.lessonTestIncorrect[language]}
+                            {isCorrect ? 'Correct' : 'Incorrect'}
                         </span>
                     </div>
                     {!isCorrect && (
                          <div className="mt-2 space-y-2 text-xs">
-                            <p><strong className="font-medium text-slate-600 dark:text-slate-400">{UI_TEXT.lessonTestYourAnswer[language]}:</strong> <span className="text-red-700 dark:text-red-300 italic">"{gradingResult.userAnswer || 'No answer provided'}"</span></p>
-                            <p><strong className="font-medium text-slate-600 dark:text-slate-400">{UI_TEXT.lessonTestCorrectAnswer[language]}:</strong> <span className="text-green-700 dark:text-green-300">"{gradingResult.correctAnswer}"</span></p>
+                            <p><strong className="font-medium text-slate-600 dark:text-slate-400">Your Answer:</strong> <span className="text-red-700 dark:text-red-300 italic">"{gradingResult.userAnswer || 'No answer provided'}"</span></p>
+                            <p><strong className="font-medium text-slate-600 dark:text-slate-400">Correct Answer:</strong> <span className="text-green-700 dark:text-green-300">"{gradingResult.correctAnswer}"</span></p>
                         </div>
                     )}
                 </div>
@@ -100,7 +101,7 @@ const InteractiveQuestion: React.FC<{
 };
 
 const InteractiveLessonTest: React.FC<InteractiveLessonTestProps> = ({
-  lessonPlan, language, userAnswers, onAnswerChange, gradingResults, isGrading, onGrade, onQuit
+  lessonPlan, userAnswers, onAnswerChange, gradingResults, isGrading, onGrade, onQuit
 }) => {
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [timeLeft, setTimeLeft] = useState(15 * 60); // 15 minutes for a standard lesson test
@@ -108,7 +109,6 @@ const InteractiveLessonTest: React.FC<InteractiveLessonTestProps> = ({
   const formattedPassage = useMemo(() => formatPassage(lessonPlan.readingPassage), [lessonPlan.readingPassage]);
   const score = useMemo(() => {
     if (!gradingResults) return null;
-    // FIX: Explicitly type the filter callback parameter to resolve 'unknown' type error.
     const correctCount = Object.values(gradingResults).filter((r: GradingResult) => r.result === 'correct').length;
     return { correct: correctCount, total: lessonPlan.comprehensionQuestions.length };
   }, [gradingResults, lessonPlan.comprehensionQuestions.length]);
@@ -149,21 +149,21 @@ const InteractiveLessonTest: React.FC<InteractiveLessonTestProps> = ({
                     <h3 className="font-semibold text-slate-700 dark:text-slate-300 truncate max-w-xs sm:max-w-md">{lessonPlan.title}</h3>
                     <p className="text-sm text-slate-500 dark:text-slate-400">
                         {gradingResults 
-                            ? `${UI_TEXT.lessonTestScore[language]}: ${score?.correct} / ${score?.total}`
-                            : `${UI_TEXT.lessonTestProgress[language]} ${currentQuestionIndex + 1} / ${lessonPlan.comprehensionQuestions.length}`
+                            ? `Score: ${score?.correct} / ${score?.total}`
+                            : `Question ${currentQuestionIndex + 1} / ${lessonPlan.comprehensionQuestions.length}`
                         }
                     </p>
                 </div>
                 <div className="flex items-center space-x-4">
                     {!gradingResults && (
                         <div className="text-right">
-                            <p className="font-semibold text-slate-700 dark:text-slate-300">{UI_TEXT.lessonTestTimeLeft[language]}</p>
+                            <p className="font-semibold text-slate-700 dark:text-slate-300">Time Left</p>
                             <p className="font-mono text-lg text-boun-blue dark:text-blue-400">{formatTime(timeLeft)}</p>
                         </div>
                     )}
                     <button onClick={onQuit} className="flex items-center text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-boun-blue dark:hover:text-blue-400">
                         <XMarkIcon className="w-6 h-6 mr-1" />
-                        {UI_TEXT.lessonTestQuit[language]}
+                        Quit Test
                     </button>
                 </div>
             </div>
@@ -185,7 +185,6 @@ const InteractiveLessonTest: React.FC<InteractiveLessonTestProps> = ({
                                 userAnswer={userAnswers[i + 1] || ''}
                                 onAnswerChange={(answer) => onAnswerChange(i + 1, answer)}
                                 gradingResult={gradingResults ? gradingResults[i + 1] : null}
-                                language={language}
                             />
                         ))
                     ) : (
@@ -195,7 +194,6 @@ const InteractiveLessonTest: React.FC<InteractiveLessonTestProps> = ({
                             userAnswer={userAnswers[currentQuestionIndex + 1] || ''}
                             onAnswerChange={(answer) => onAnswerChange(currentQuestionIndex + 1, answer)}
                             gradingResult={null}
-                            language={language}
                         />
                     )}
                 </div>
@@ -209,11 +207,11 @@ const InteractiveLessonTest: React.FC<InteractiveLessonTestProps> = ({
                             {isGrading ? (
                                 <>
                                     <div className="w-5 h-5 border-2 border-white/50 border-t-white rounded-full animate-spin mr-2"></div>
-                                    {UI_TEXT.lessonTestGrading[language]}
+                                    Grading...
                                 </>
                             ) : (
                                 <>
-                                    <span>{isLastQuestion ? UI_TEXT.lessonTestSubmit[language] : UI_TEXT.lessonTestNext[language]}</span>
+                                    <span>{isLastQuestion ? 'Submit & See Results' : 'Next'}</span>
                                     {!isLastQuestion && <ArrowRightIcon className="w-5 h-5 ml-2" />}
                                 </>
                             )}

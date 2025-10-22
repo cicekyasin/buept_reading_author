@@ -1,21 +1,18 @@
 import React from 'react';
 import SunIcon from './icons/SunIcon';
 import MoonIcon from './icons/MoonIcon';
-import { UI_TEXT } from '../translations';
-import type { Language } from '../types';
 
 interface ThemeToggleProps {
   theme: 'light' | 'dark';
   setTheme: (theme: 'light' | 'dark') => void;
-  language: Language;
 }
 
-const ThemeToggle: React.FC<ThemeToggleProps> = ({ theme, setTheme, language }) => {
+const ThemeToggle: React.FC<ThemeToggleProps> = ({ theme, setTheme }) => {
   const toggleTheme = () => {
     setTheme(theme === 'light' ? 'dark' : 'light');
   };
   
-  const tooltipText = theme === 'light' ? UI_TEXT.themeTooltipDark[language] : UI_TEXT.themeTooltipLight[language];
+  const tooltipText = theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode';
 
   return (
     <button

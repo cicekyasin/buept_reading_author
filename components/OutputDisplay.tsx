@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { jsPDF } from 'jspdf';
-import type { LessonPlan, Source, Language, ComprehensionQuestion, UserRole } from '../types';
+import type { LessonPlan, Source, ComprehensionQuestion, UserRole, CreditSystemMode } from '../types';
 import Loader from './Loader';
 import Feedback from './Feedback';
 import SaveIcon from './icons/SaveIcon';
@@ -14,7 +14,6 @@ import ExpandIcon from './icons/ExpandIcon';
 import PencilIcon from './icons/PencilIcon';
 import PdfIcon from './icons/PdfIcon';
 import CheckCircleIcon from './icons/CheckCircleIcon';
-import { UI_TEXT } from '../translations';
 
 interface OutputDisplayProps {
   lessonPlan: LessonPlan | null;
@@ -24,10 +23,13 @@ interface OutputDisplayProps {
   error: string | null;
   loadingMessage: string;
   onSave: () => void;
-  language: Language;
   userRole: UserRole;
   onExpandPassage: () => void;
   onStartTest: () => void;
+  isDevMode: boolean;
+  creditSystemMode: CreditSystemMode;
+  setCreditSystemMode: (mode: CreditSystemMode) => void;
+  onToggleDevMode: () => void;
 }
 
 const OutputDisplay: React.FC<OutputDisplayProps> = ({
@@ -38,10 +40,13 @@ const OutputDisplay: React.FC<OutputDisplayProps> = ({
   error,
   loadingMessage,
   onSave,
-  language,
   userRole,
   onExpandPassage,
   onStartTest,
+  isDevMode,
+  creditSystemMode,
+  setCreditSystemMode,
+  onToggleDevMode,
 }) => {
 
   const categorizedQuestions = useMemo(() => {
@@ -118,10 +123,10 @@ const OutputDisplay: React.FC<OutputDisplayProps> = ({
     
     addTextWithWrap(lessonPlan.title, { size: 18, style: 'bold' });
     yPos += 5;
-    addTextWithWrap(UI_TEXT.passageTitle[language], { size: 14, style: 'bold' });
+    addTextWithWrap("Reading Passage", { size: 14, style: 'bold' });
     lessonPlan.readingPassage.split('\n').filter(p => p.trim()).forEach(p => addTextWithWrap(p));
     yPos += 8;
-    addTextWithWrap(UI_TEXT.questionsTitle[language], { size: 14, style: 'bold' });
+    addTextWithWrap("Comprehension Questions", { size: 14, style: 'bold' });
     lessonPlan.comprehensionQuestions.forEach((q, i) => {
         addTextWithWrap(`${i + 1}. ${q.question}`, { size: 11, style: 'bold' });
         if (q.type === 'multiple-choice' && q.options) {
@@ -136,13 +141,13 @@ const OutputDisplay: React.FC<OutputDisplayProps> = ({
   };
 
   if (isLoading) {
-    return <Loader message={loadingMessage} language={language} />;
+    return <Loader message={loadingMessage} />;
   }
 
   if (error) {
     return (
       <div className="p-6 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-lg text-center">
-        <h3 className="text-lg font-semibold text-red-800 dark:text-red-200">{UI_TEXT.generationFailed[language]}</h3>
+        <h3 className="text-lg font-semibold text-red-800 dark:text-red-200">Generation Failed</h3>
         <p className="mt-2 text-sm text-red-700 dark:text-red-300">{error}</p>
       </div>
     );
@@ -152,8 +157,8 @@ const OutputDisplay: React.FC<OutputDisplayProps> = ({
     return (
       <div className="p-8 text-center bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg">
         <BookOpenIcon className="w-12 h-12 mx-auto text-slate-400 dark:text-slate-500" />
-        <h3 className="mt-4 text-lg font-semibold text-slate-800 dark:text-slate-200">{UI_TEXT.outputPlaceholderTitle[language]}</h3>
-        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{UI_TEXT.outputPlaceholderSubtitle[language]}</p>
+        <h3 className="mt-4 text-lg font-semibold text-slate-800 dark:text-slate-200">Your Lesson Plan Will Appear Here</h3>
+        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Fill out the form and click "Generate" to get started.</p>
       </div>
     );
   }
@@ -163,7 +168,7 @@ const OutputDisplay: React.FC<OutputDisplayProps> = ({
     return (
        <div className="p-8 bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg text-center">
         <CheckCircleIcon className="w-12 h-12 mx-auto text-green-500" />
-        <h2 className="mt-4 text-2xl font-bold text-slate-900 dark:text-slate-100">{UI_TEXT.studentChoiceTitle[language]}</h2>
+        <h2 className="mt-4 text-2xl font-bold text-slate-900 dark:text-slate-100">Your Lesson is Ready!</h2>
         <p className="mt-2 max-w-xl mx-auto text-slate-500 dark:text-slate-400">
           {lessonPlan.title}
         </p>
@@ -174,14 +179,14 @@ const OutputDisplay: React.FC<OutputDisplayProps> = ({
                 className="flex-grow flex justify-center items-center py-3 px-6 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-boun-light-blue hover:bg-opacity-90 focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-slate-800 focus:ring-boun-light-blue"
             >
               <PencilIcon className="w-5 h-5 mr-2" />
-              {UI_TEXT.studentChoiceTakeTest[language]}
+              Take Test Online
             </button>
              <button
                 onClick={handleDownloadPracticePdf}
                 className="flex-grow flex justify-center items-center py-3 px-6 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm text-sm font-medium text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-700 hover:bg-slate-50 dark:hover:bg-slate-600 focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-slate-800 focus:ring-boun-light-blue"
             >
               <PdfIcon className="w-5 h-5 mr-2" />
-              {UI_TEXT.studentChoiceDownloadPdf[language]}
+              Download PDF for Practice
             </button>
         </div>
       </div>
@@ -202,14 +207,14 @@ const OutputDisplay: React.FC<OutputDisplayProps> = ({
         <div className="flex space-x-2 print:hidden">
           <button
             onClick={onSave}
-            title={UI_TEXT.saveTooltip[language]}
+            title="Save Lesson"
             className="p-2 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-slate-800 focus:ring-boun-light-blue"
           >
             <SaveIcon className="w-5 h-5" />
           </button>
           <button
             onClick={handlePrint}
-            title={UI_TEXT.printTooltip[language]}
+            title="Print Lesson"
             className="p-2 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-slate-800 focus:ring-boun-light-blue"
           >
             <PrintIcon className="w-5 h-5" />
@@ -222,11 +227,11 @@ const OutputDisplay: React.FC<OutputDisplayProps> = ({
           <Card>
             <Section 
               icon={<BookOpenIcon className="w-6 h-6" />} 
-              title={UI_TEXT.passageTitle[language]}
+              title="Reading Passage"
               actionButton={
                 <button
                   onClick={onExpandPassage}
-                  title={UI_TEXT.expandTooltip[language]}
+                  title="Expand View"
                   className="p-2 text-slate-400 dark:text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-slate-800 focus:ring-boun-light-blue print:hidden"
                 >
                   <ExpandIcon className="w-5 h-5" />
@@ -240,21 +245,21 @@ const OutputDisplay: React.FC<OutputDisplayProps> = ({
             </Section>
           </Card>
           <Card>
-            <Section icon={<QuestionMarkCircleIcon className="w-6 h-6" />} title={UI_TEXT.questionsTitle[language]}>
+            <Section icon={<QuestionMarkCircleIcon className="w-6 h-6" />} title="Comprehension Questions">
               <div className="space-y-6">
                 {categorizedQuestions?.['true-false'] && (
-                  <QuestionCategory title={UI_TEXT.questionTrueFalseTitle[language]}>
-                    {categorizedQuestions['true-false'].map((q, i) => <QuestionItem key={`tf-${i}`} question={q} language={language}/>)}
+                  <QuestionCategory title="True / False">
+                    {categorizedQuestions['true-false'].map((q, i) => <QuestionItem key={`tf-${i}`} question={q} />)}
                   </QuestionCategory>
                 )}
                 {categorizedQuestions?.['multiple-choice'] && (
-                  <QuestionCategory title={UI_TEXT.questionMultipleChoiceTitle[language]}>
-                    {categorizedQuestions['multiple-choice'].map((q, i) => <QuestionItem key={`mc-${i}`} question={q} language={language}/>)}
+                  <QuestionCategory title="Multiple Choice">
+                    {categorizedQuestions['multiple-choice'].map((q, i) => <QuestionItem key={`mc-${i}`} question={q} />)}
                   </QuestionCategory>
                 )}
                 {categorizedQuestions?.['short-answer'] && (
-                   <QuestionCategory title={UI_TEXT.questionShortAnswerTitle[language]}>
-                    {categorizedQuestions['short-answer'].map((q, i) => <QuestionItem key={`sa-${i}`} question={q} language={language}/>)}
+                   <QuestionCategory title="Short Answer">
+                    {categorizedQuestions['short-answer'].map((q, i) => <QuestionItem key={`sa-${i}`} question={q} />)}
                   </QuestionCategory>
                 )}
               </div>
@@ -264,11 +269,11 @@ const OutputDisplay: React.FC<OutputDisplayProps> = ({
         
         <div className="md:col-span-2 space-y-6">
           <Card>
-            <Section icon={<AcademicCapIcon className="w-6 h-6" />} title={UI_TEXT.rationaleTitle[language]}>
+            <Section icon={<AcademicCapIcon className="w-6 h-6" />} title="Pedagogical Rationale">
               <p className="prose prose-slate dark:prose-invert print:prose-sm">{lessonPlan.pedagogicalRationale}</p>
             </Section>
             <hr className="my-6 border-slate-200 dark:border-slate-700" />
-            <Section icon={<ListIcon className="w-6 h-6" />} title={UI_TEXT.vocabularyTitle[language]}>
+            <Section icon={<ListIcon className="w-6 h-6" />} title="Key Vocabulary">
               <ul className="space-y-4">
                 {lessonPlan.keyVocabulary.map((item, index) => (
                   <li key={index}>
@@ -284,11 +289,11 @@ const OutputDisplay: React.FC<OutputDisplayProps> = ({
           </Card>
           
           <Card>
-            <Section icon={<LinkIcon className="w-6 h-6" />} title={UI_TEXT.sourcesTitle[language]}>
+            <Section icon={<LinkIcon className="w-6 h-6" />} title="Possible Sources">
               {isSearchingSources ? (
                   <div className="flex items-center space-x-2 text-sm text-slate-500 dark:text-slate-400">
                       <div className="w-4 h-4 border-2 border-slate-300 border-t-slate-500 rounded-full animate-spin"></div>
-                      <span>{UI_TEXT.searchingSources[language]}</span>
+                      <span>Searching for sources...</span>
                   </div>
               ) : sources && sources.length > 0 ? (
                   <ul className="space-y-2">
@@ -301,7 +306,7 @@ const OutputDisplay: React.FC<OutputDisplayProps> = ({
                       ))}
                   </ul>
               ) : sources ? (
-                  <p className="text-sm text-slate-500 dark:text-slate-400">{UI_TEXT.noSourcesFound[language]}</p>
+                  <p className="text-sm text-slate-500 dark:text-slate-400">No sources were found for this passage.</p>
               ) : null}
             </Section>
           </Card>
@@ -309,7 +314,13 @@ const OutputDisplay: React.FC<OutputDisplayProps> = ({
       </div>
       
       <div className="print:hidden">
-        <Feedback language={language} />
+        <Feedback 
+          isDevMode={isDevMode} 
+          lessonTitle={lessonPlan.title} 
+          creditSystemMode={creditSystemMode}
+          setCreditSystemMode={setCreditSystemMode}
+          onToggleDevMode={onToggleDevMode}
+        />
       </div>
     </div>
   );
@@ -350,12 +361,12 @@ const QuestionCategory: React.FC<{ title: string; children: React.ReactNode }> =
   </div>
 );
 
-const QuestionItem: React.FC<{question: ComprehensionQuestion; language: Language}> = ({ question, language }) => (
+const QuestionItem: React.FC<{question: ComprehensionQuestion}> = ({ question }) => (
     <li>
         <span>{question.question}</span>
-        {question.type === 'multiple-choice' && question.options && (
+        {question.type === 'multiple-choice' && (
             <ul className="pl-6 mt-2 space-y-1 text-sm list-[lower-alpha]">
-                {question.options.map((opt, i) => (
+                {question.options?.map((opt, i) => (
                     <li key={i} className={opt === question.answer ? 'font-semibold text-boun-blue dark:text-blue-400' : ''}>
                         {opt}
                     </li>
@@ -363,7 +374,7 @@ const QuestionItem: React.FC<{question: ComprehensionQuestion; language: Languag
             </ul>
         )}
         <p className="mt-2 pl-1 text-sm">
-            <strong className="font-semibold text-slate-500 dark:text-slate-400">{UI_TEXT.answerKey[language]}: </strong>
+            <strong className="font-semibold text-slate-500 dark:text-slate-400">Answer Key: </strong>
             <span className="text-boun-blue dark:text-blue-400 italic">{question.answer}</span>
         </p>
     </li>

@@ -1,6 +1,5 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import type { BueptReadingSection, Language, UserAnswers, GradingResults, BueptQuestion, GradingResult } from '../types';
-import { UI_TEXT } from '../translations';
+import type { BueptReadingSection, UserAnswers, GradingResults, BueptQuestion, GradingResult } from '../types';
 import ArrowLeftIcon from './icons/ArrowLeftIcon';
 import CheckCircleIcon from './icons/CheckCircleIcon';
 import XCircleIcon from './icons/XCircleIcon';
@@ -13,7 +12,6 @@ interface InteractiveReadingSectionProps {
   section: BueptReadingSection;
   sectionTitle: string;
   time: number;
-  language: Language;
   userAnswers: UserAnswers;
   onAnswerChange: (questionNumber: number, answer: string) => void;
   gradingResults: GradingResults | null;
@@ -22,8 +20,14 @@ interface InteractiveReadingSectionProps {
   onBack: () => void;
 }
 
-const formatPassage = (passage: string) => {
-    return passage.split(/(\[P\d+\])/).filter(part => part).map((part, index) => {
+const formatPassage = (passage: string | string[]) => {
+    const passageText = Array.isArray(passage) ? passage.join('\n\n') : passage;
+
+    if (typeof passageText !== 'string') {
+        return null; 
+    }
+    
+    return passageText.split(/(\[P\d+\])/).filter(part => part).map((part, index) => {
         if (part.match(/\[P\d+\]/)) {
             return <strong key={index} className="block mt-4 first:mt-0 font-bold text-slate-500 dark:text-slate-400">{part.trim()}</strong>;
         }
@@ -36,9 +40,8 @@ const InteractiveQuestion: React.FC<{
     userAnswer: string, 
     onAnswerChange: (answer: string) => void,
     gradingResult: GradingResults[number] | null,
-    isGrading: boolean,
-    language: Language
-}> = ({ q, userAnswer, onAnswerChange, gradingResult, isGrading, language }) => {
+    isGrading: boolean
+}> = ({ q, userAnswer, onAnswerChange, gradingResult, isGrading }) => {
     const isGraded = !!gradingResult;
     const isCorrect = gradingResult?.result === 'correct';
 
@@ -51,7 +54,7 @@ const InteractiveQuestion: React.FC<{
             {q.options ? ( // Multiple Choice
                 <fieldset className="mt-3 space-y-2" disabled={isGraded || isGrading}>
                     <legend className="sr-only">Options for question {q.questionNumber}</legend>
-                    {q.options.map((opt, i) => {
+                    {q.options?.map((opt, i) => {
                         const optionLetter = String.fromCharCode(65 + i);
                         return (
                              <label key={i} className="flex items-start p-2 rounded-md transition-colors hover:bg-slate-100 dark:hover:bg-slate-800/50 has-[:checked]:bg-blue-50 dark:has-[:checked]:bg-blue-900/20">
@@ -88,13 +91,13 @@ const InteractiveQuestion: React.FC<{
                     <div className="flex items-center">
                         {isCorrect ? <CheckCircleIcon className="w-5 h-5 text-green-600 dark:text-green-500" /> : <XCircleIcon className="w-5 h-5 text-red-600 dark:text-red-500" />}
                         <span className={`ml-2 text-sm font-bold ${isCorrect ? 'text-green-800 dark:text-green-300' : 'text-red-800 dark:text-red-300'}`}>
-                            {isCorrect ? UI_TEXT.bueptCorrect[language] : UI_TEXT.bueptIncorrect[language]}
+                            {isCorrect ? 'Correct' : 'Incorrect'}
                         </span>
                     </div>
                     {!isCorrect && (
                          <div className="mt-2 space-y-2 text-xs">
-                            <p><strong className="font-medium text-slate-600 dark:text-slate-400">{UI_TEXT.bueptYourAnswer[language]}:</strong> <span className="text-red-700 dark:text-red-300 italic">"{gradingResult.userAnswer || 'No answer provided'}"</span></p>
-                            <p><strong className="font-medium text-slate-600 dark:text-slate-400">{UI_TEXT.bueptCorrectAnswer[language]}:</strong> <span className="text-green-700 dark:text-green-300">"{gradingResult.correctAnswer}"</span></p>
+                            <p><strong className="font-medium text-slate-600 dark:text-slate-400">Your Answer:</strong> <span className="text-red-700 dark:text-red-300 italic">"{gradingResult.userAnswer || 'No answer provided'}"</span></p>
+                            <p><strong className="font-medium text-slate-600 dark:text-slate-400">Correct Answer:</strong> <span className="text-green-700 dark:text-green-300">"{gradingResult.correctAnswer}"</span></p>
                         </div>
                     )}
                 </div>
@@ -108,7 +111,6 @@ const InteractiveReadingSection: React.FC<InteractiveReadingSectionProps> = ({
   section,
   sectionTitle,
   time,
-  language,
   userAnswers,
   onAnswerChange,
   gradingResults,
@@ -122,12 +124,13 @@ const InteractiveReadingSection: React.FC<InteractiveReadingSectionProps> = ({
   const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
 
   const formattedPassage = useMemo(() => formatPassage(section.passage), [section.passage]);
+  
   const score = useMemo(() => {
     if (!gradingResults) return null;
-    // FIX: Explicitly type the filter callback parameter to resolve 'unknown' type error.
+    const totalQuestions = section?.questions?.length ?? 0;
     const correctCount = Object.values(gradingResults).filter((r: GradingResult) => r.result === 'correct').length;
-    return { correct: correctCount, total: section.questions.length };
-  }, [gradingResults, section.questions.length]);
+    return { correct: correctCount, total: totalQuestions };
+  }, [gradingResults, section]);
 
   useEffect(() => {
     let timer: number;
@@ -157,6 +160,7 @@ const InteractiveReadingSection: React.FC<InteractiveReadingSectionProps> = ({
   };
 
   const handleNextQuestion = () => {
+      if (!section?.questions?.length) return;
       const isLastQuestion = currentQuestionIndex === section.questions.length - 1;
       if (!isLastQuestion) {
           setCurrentQuestionIndex(prev => prev + 1);
@@ -166,6 +170,26 @@ const InteractiveReadingSection: React.FC<InteractiveReadingSectionProps> = ({
   };
 
   const renderTestTakerView = () => {
+    if (!section?.questions?.length) {
+         return (
+            <div
+                className="fixed inset-0 bg-slate-50 dark:bg-slate-900 z-50 flex flex-col items-center justify-center text-center p-4"
+                role="dialog"
+                aria-modal="true"
+            >
+                <h3 className="text-xl font-semibold text-slate-800 dark:text-slate-200">No Questions Available</h3>
+                <p className="mt-2 text-slate-600 dark:text-slate-400">The generated section did not include any questions. Please try again.</p>
+                <button 
+                    onClick={onBack} 
+                    className="mt-6 flex items-center justify-center py-2 px-5 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-boun-light-blue hover:bg-opacity-90 focus:outline-none focus:ring-2 focus:ring-offset-2"
+                >
+                    <ArrowLeftIcon className="w-5 h-5 mr-2" />
+                    Back to Selection
+                </button>
+            </div>
+        );
+    }
+
     const isLastQuestion = currentQuestionIndex === section.questions.length - 1;
     const currentQuestion = section.questions[currentQuestionIndex];
   
@@ -181,25 +205,25 @@ const InteractiveReadingSection: React.FC<InteractiveReadingSectionProps> = ({
                         <h3 className="font-semibold text-slate-700 dark:text-slate-300">{sectionTitle}</h3>
                         <p className="text-sm text-slate-500 dark:text-slate-400">
                              {gradingResults 
-                                ? `${UI_TEXT.bueptScore[language]}: ${score?.correct} / ${score?.total}`
-                                : `${UI_TEXT.bueptQuestionProgress[language]} ${currentQuestionIndex + 1} / ${section.questions.length}`
+                                ? `Score: ${score?.correct} / ${score?.total}`
+                                : `Question ${currentQuestionIndex + 1} / ${section.questions.length}`
                              }
                         </p>
                     </div>
                     <div className="flex items-center space-x-4">
                         {!gradingResults && (
                            <div className="text-right">
-                             <p className="font-semibold text-slate-700 dark:text-slate-300">{UI_TEXT.bueptTimeLeft[language]}</p>
+                             <p className="font-semibold text-slate-700 dark:text-slate-300">Time Left</p>
                              <p className="font-mono text-lg text-boun-blue dark:text-blue-400">{formatTime(timeLeft)}</p>
                            </div>
                         )}
                          <button 
                            onClick={onBack} 
                            className="flex items-center text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-boun-blue dark:hover:text-blue-400"
-                           title={UI_TEXT.bueptQuit[language]}
+                           title="Quit Test"
                          >
                             <XMarkIcon className="w-6 h-6 mr-1" />
-                            {UI_TEXT.bueptQuit[language]}
+                            Quit Test
                         </button>
                     </div>
                 </div>
@@ -221,7 +245,6 @@ const InteractiveReadingSection: React.FC<InteractiveReadingSectionProps> = ({
                                     onAnswerChange={(answer) => onAnswerChange(q.questionNumber, answer)}
                                     gradingResult={gradingResults ? gradingResults[q.questionNumber] : null}
                                     isGrading={isGrading}
-                                    language={language}
                                 />
                            ))
                         ) : (
@@ -232,7 +255,6 @@ const InteractiveReadingSection: React.FC<InteractiveReadingSectionProps> = ({
                                 onAnswerChange={(answer) => onAnswerChange(currentQuestion.questionNumber, answer)}
                                 gradingResult={null}
                                 isGrading={isGrading}
-                                language={language}
                             />
                         )}
                     </div>
@@ -246,11 +268,11 @@ const InteractiveReadingSection: React.FC<InteractiveReadingSectionProps> = ({
                                 {isGrading ? (
                                     <>
                                         <div className="w-5 h-5 border-2 border-white/50 border-t-white rounded-full animate-spin mr-2"></div>
-                                        {UI_TEXT.bueptGradingButton[language]}
+                                        Grading...
                                     </>
                                 ) : (
                                   <>
-                                    <span>{isLastQuestion ? UI_TEXT.bueptSubmitButton[language] : UI_TEXT.bueptNext[language]}</span>
+                                    <span>{isLastQuestion ? 'Submit & Check Answers' : 'Next'}</span>
                                     {!isLastQuestion && <ArrowRightIcon className="w-5 h-5 ml-2" />}
                                   </>
                                 )}
@@ -262,23 +284,23 @@ const InteractiveReadingSection: React.FC<InteractiveReadingSectionProps> = ({
                             {!feedbackSubmitted ? (
                                 <>
                                     <p className="text-sm font-medium text-center text-slate-700 dark:text-slate-300 mb-3">
-                                        {UI_TEXT.bueptFeedbackQuestion[language]}
+                                        How did you find this practice section?
                                     </p>
                                     <div className="flex justify-center gap-3">
                                         <button onClick={() => setFeedbackSubmitted(true)} className="flex-1 py-2 px-3 rounded-md text-xs font-medium transition-colors bg-green-100 text-green-800 hover:bg-green-200 dark:bg-green-900/50 dark:text-green-300 dark:hover:bg-green-900">
-                                            {UI_TEXT.bueptFeedbackOptionEasy[language]}
+                                            Too Easy
                                         </button>
                                         <button onClick={() => setFeedbackSubmitted(true)} className="flex-1 py-2 px-3 rounded-md text-xs font-medium transition-colors bg-blue-100 text-blue-800 hover:bg-blue-200 dark:bg-blue-900/50 dark:text-blue-300 dark:hover:bg-blue-900">
-                                            {UI_TEXT.bueptFeedbackOptionGood[language]}
+                                            Just Right
                                         </button>
                                         <button onClick={() => setFeedbackSubmitted(true)} className="flex-1 py-2 px-3 rounded-md text-xs font-medium transition-colors bg-red-100 text-red-800 hover:bg-red-200 dark:bg-red-900/50 dark:text-red-300 dark:hover:bg-red-900">
-                                            {UI_TEXT.bueptFeedbackOptionHard[language]}
+                                            Too Hard
                                         </button>
                                     </div>
                                 </>
                             ) : (
                                 <p className="text-sm font-medium text-center text-slate-600 dark:text-slate-300">
-                                    {UI_TEXT.bueptFeedbackThanks[language]}
+                                    Thank you for your feedback!
                                 </p>
                             )}
                         </div>
@@ -334,14 +356,14 @@ const InteractiveReadingSection: React.FC<InteractiveReadingSectionProps> = ({
         <div className="absolute inset-0 bg-white/50 dark:bg-slate-800/50 flex flex-col items-center justify-center rounded-xl">
              <button onClick={onBack} className="absolute top-6 left-6 flex items-center text-sm font-medium text-boun-blue dark:text-blue-400 hover:underline">
                 <ArrowLeftIcon className="w-4 h-4 mr-1" />
-                {UI_TEXT.bueptBackToSelection[language]}
+                Back to Selection
             </button>
             <button
                 onClick={() => setIsTestActive(true)}
                 className="flex items-center justify-center py-4 px-8 border border-transparent rounded-full shadow-lg text-lg font-medium text-white bg-boun-light-blue hover:bg-opacity-90 focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-slate-800 focus:ring-boun-light-blue"
             >
                 <PlayIcon className="w-6 h-6 mr-3" />
-                {UI_TEXT.bueptStartSection[language]}
+                Start Section
             </button>
         </div>
     </div>

@@ -4,9 +4,9 @@ export type CEFRLevel =
   | 'B1-' | 'B1' | 'B1+'
   | 'B2-' | 'B2' | 'B2+';
 
-export type Language = 'en' | 'tr';
 export type UserRole = 'student' | 'instructor';
 export type AppMode = 'designer' | 'exam';
+export type CreditSystemMode = 'simple' | 'complex';
 
 export interface VocabularyWord {
   word: string;

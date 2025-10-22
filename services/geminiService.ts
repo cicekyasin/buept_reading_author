@@ -1,8 +1,32 @@
 import { GoogleGenAI, Type } from '@google/genai';
-import type { LessonPlan, Source, CEFRLevel, ComprehensionQuestion, BueptReadingSection } from '../types';
+import type { LessonPlan, Source, CEFRLevel, ComprehensionQuestion, BueptReadingSection, BueptQuestion } from '../types';
 
 // FIX: Initialize the GoogleGenAI client. The API key must be read from `process.env.API_KEY`.
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
+
+/**
+ * Reliably parses JSON from a string, even if it's wrapped in markdown code fences.
+ * @param text The raw text response from the model.
+ * @returns The parsed JSON object.
+ * @throws An error if parsing fails.
+ */
+function parseJsonFromMarkdown(text: string): any {
+  const codeBlockRegex = /```json\n([\s\S]*?)\n```/;
+  const match = text.match(codeBlockRegex);
+
+  let jsonText = text.trim();
+  if (match && match[1]) {
+    jsonText = match[1];
+  }
+
+  try {
+    return JSON.parse(jsonText);
+  } catch (error) {
+    console.error("Failed to parse JSON. Raw text:", text);
+    throw new Error("The AI returned a response in an invalid format. Please try again.");
+  }
+}
+
 
 const lessonPlanSchema = {
   type: Type.OBJECT,
@@ -65,15 +89,15 @@ export const generateLessonPlan = async (
   pedagogicalFocus: string,
   customVocabulary: string
 ): Promise<LessonPlan> => {
-  const structureExample = (bodyCount: string) => `It must be formatted with double line breaks between paragraphs (like \\n\\n). Example:\\n[Introduction text]\\n\\n[Body paragraph 1 text]\\n\\n... (${bodyCount}) ...\\n\\n[Conclusion text]`;
+  const structureExample = (bodyCount: string) => `It should be formatted with double line breaks between paragraphs (like \\n\\n). Example:\\n[Introduction text]\\n\\n[Body paragraph 1 text]\\n\\n... (${bodyCount}) ...\\n\\n[Conclusion text]`;
 
   let paragraphInstruction = '';
   if (passageLength <= 300) { // Quick Read (~250 words)
-      paragraphInstruction = `**CRITICAL STRUCTURE:** The passage MUST have an introduction, 1-2 body paragraphs, and a conclusion. ${structureExample('1-2 body paragraphs')}`;
+      paragraphInstruction = `**Passage Structure:** The passage should have an introduction, 1-2 body paragraphs, and a conclusion. ${structureExample('1-2 body paragraphs')}`;
   } else if (passageLength <= 600) { // Standard (~500 words)
-      paragraphInstruction = `**CRITICAL STRUCTURE:** The passage MUST have an introduction, 2-3 body paragraphs, and a conclusion. ${structureExample('2-3 body paragraphs')}`;
+      paragraphInstruction = `**Passage Structure:** The passage should have an introduction, 2-3 body paragraphs, and a conclusion. ${structureExample('2-3 body paragraphs')}`;
   } else { // In-Depth & Extended (750+ words)
-      paragraphInstruction = `**CRITICAL STRUCTURE:** The passage MUST have an introduction, at least 3-4 well-developed body paragraphs, and a conclusion. ${structureExample('3-4+ body paragraphs')}`;
+      paragraphInstruction = `**Passage Structure:** The passage should have an introduction, at least 3-4 well-developed body paragraphs, and a conclusion. ${structureExample('3-4+ body paragraphs')}`;
   }
 
 
@@ -119,20 +143,18 @@ export const generateLessonPlan = async (
     const jsonText = response.text.trim();
     const lessonPlan = JSON.parse(jsonText);
 
-    if (!lessonPlan.comprehensionQuestions) {
+    if (!lessonPlan.comprehensionQuestions || !Array.isArray(lessonPlan.comprehensionQuestions)) {
         lessonPlan.comprehensionQuestions = [];
     } else {
-        lessonPlan.comprehensionQuestions = lessonPlan.comprehensionQuestions.filter((q: any) => q.question && q.type && q.answer);
+        lessonPlan.comprehensionQuestions = lessonPlan.comprehensionQuestions.filter((q: any) => q && q.question && q.type && q.answer);
     }
     
     return lessonPlan as LessonPlan;
 
   } catch (error) {
     console.error('Error generating lesson plan:', error);
-    if (error instanceof Error) {
-        throw new Error(`The AI model failed to generate a valid lesson plan. Details: ${error.message}`);
-    }
-    throw new Error('An unknown error occurred while generating the lesson plan.');
+    // Throw a generic, user-friendly error message. The specific error is logged above for debugging.
+    throw new Error('Failed to generate lesson plan. Please try again.');
   }
 };
 
@@ -164,7 +186,6 @@ export const findSourcesForPassage = async (
         );
       return sources;
     }
-
     return [];
   } catch (error) {
     console.error('Error finding sources:', error);
@@ -172,88 +193,48 @@ export const findSourcesForPassage = async (
   }
 };
 
-export const generateRandomTopic = async (): Promise<string> => {
+export const gradeOpenEndedAnswer = async (
+  question: string,
+  correctAnswer: string,
+  userAnswer: string
+): Promise<'Correct' | 'Incorrect'> => {
   const prompt = `
-    Your role is an AI idea generator for language teachers, specializing in unique and engaging topics. Your output must be a single, creative topic phrase for an EFL/ESL reading passage.
+    You are an AI grader for an English language test. Your task is to evaluate a user's answer to a reading comprehension question.
+    You must determine if the user's answer is semantically equivalent to the correct answer. The user does not need to use the exact same words, but their answer must convey the same meaning.
 
-    **Core Directive:** You MUST randomly adopt ONE of the following creative personas for each topic you generate. Do not be predictable. Your goal is to provide fresh, unexpected, and memorable ideas.
+    Question: "${question}"
+    Correct Answer: "${correctAnswer}"
+    User's Answer: "${userAnswer}"
 
-    **Personas (Choose one at random):**
-    1.  **The Absurdist:** Generate a funny, strange, or surreal scenario. (e.g., 'A cat who secretly runs a famous restaurant', 'Why pigeons deliberately walk instead of fly', 'The day the color blue went on strike')
-    2.  **The Trendsetter:** Generate a topic that feels current, internet-savvy, or meme-ish. (e.g., 'Explaining the concept of "cringe" to a grandparent', 'The secret life of a delivery drone', 'A group of friends trying to take the perfect selfie')
-    3.  **The Philosopher:** Generate a simple concept explored with surprising depth. (e.g., 'What a forgotten toy thinks about', 'The feeling of "Sunday evening dread"', 'A conversation between the sun and the moon')
-    4.  **The Storyteller:** Generate a gentle, comforting, or nostalgic scene. (e.g., 'The smell of rain on a warm day', 'Finding an old photograph in a library book', 'The joy of sharing a perfect cup of tea')
-
-    **Output Constraints:**
-    - Return ONLY the topic phrase.
-    - DO NOT reveal which persona you chose.
-    - DO NOT add extra text, quotation marks, or explanations.
+    Is the user's answer correct? Respond with only the word "Correct" or "Incorrect".
   `;
-
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
       contents: prompt,
-      config: {
-        temperature: 1.0, 
-        stopSequences: ['\n'],
-      },
     });
-
-    const topic = response.text.trim().replace(/['"]+/g, ''); 
-    if (!topic) {
-      throw new Error('The AI returned an empty topic.');
+    const result = response.text.trim().toLowerCase();
+    if (result.includes('correct')) {
+      return 'Correct';
     }
-    return topic;
-
+    return 'Incorrect';
   } catch (error) {
-    console.error('Error generating random topic:', error);
-    if (error instanceof Error) {
-        throw new Error(`The AI model failed to generate a random topic. Details: ${error.message}`);
-    }
-    throw new Error('An unknown error occurred while generating a random topic.');
+    console.error('Error grading answer:', error);
+    return 'Incorrect';
   }
 };
 
-export const gradeOpenEndedAnswer = async (
-    questionText: string,
-    correctAnswer: string,
-    userAnswer: string
-): Promise<'Correct' | 'Incorrect'> => {
-    if (!userAnswer.trim()) {
-        return 'Incorrect';
-    }
-    
-    const prompt = `
-        You are an AI grader for an English exam. A student has provided an answer to a short-answer question. 
-        Your task is to perform a semantic comparison. The student's answer does not need to be an exact word-for-word match with the correct answer, but it MUST be semantically correct and capture the key information.
-        
-        **CRITICAL INSTRUCTION:** Your response MUST BE ONLY ONE WORD: either 'Correct' or 'Incorrect'. Do not provide any explanation, punctuation, or any other text.
-
-        **Question:** "${questionText}"
-        **Correct Answer:** "${correctAnswer}"
-        **Student's Answer:** "${userAnswer}"
-    `;
-
+export const generateRandomTopic = async (): Promise<string> => {
+    const prompt = "Generate a single, interesting, and specific topic suitable for an EFL reading passage. The topic should be a noun phrase. For example: 'A visit to the Spice Bazaar in Istanbul' or 'The history of Turkish coffee'. Do not add any extra text, just the topic itself.";
     try {
         const response = await ai.models.generateContent({
             model: 'gemini-2.5-flash',
             contents: prompt,
-            config: {
-                temperature: 0.1,
-                stopSequences: ['\n'],
-            },
         });
-        
-        const result = response.text.trim().toLowerCase();
-        if (result === 'correct') {
-            return 'Correct';
-        }
-        return 'Incorrect';
-
+        return response.text.trim().replace(/"/g, ''); // Remove quotes if the AI adds them
     } catch (error) {
-        console.error('Error grading open-ended answer:', error);
-        return 'Incorrect';
+        console.error("Error generating random topic:", error);
+        return "The history of coffee"; // Fallback topic
     }
 };
 
@@ -278,93 +259,215 @@ const bueptReadingSectionSchema = {
                     paragraphWithMarkers: { type: Type.STRING },
                     matchOptions: { type: Type.ARRAY, items: { type: Type.STRING } },
                 },
-                required: ["questionNumber", "questionText", "type", "answer", "paragraphReference"],
+                required: ['questionNumber', 'questionText', 'type', 'paragraphReference', 'answer'],
             },
         },
         sourceCredit: { type: Type.STRING },
     },
-    required: ["title", "passage", "questions"],
+    required: ['title', 'passage', 'questions'],
 };
 
-const getReading1Prompt = () => `
-    **Part 1: Literal Reading Section**
-    - **Topic:** Choose a suitable, engaging topic from general interest areas like history, social science, or technology.
-    - **Passage:** 1800-2000 words. Number all paragraphs.
-    - **Questions:** Generate a random number of questions between 10 and 13. Follow the specified question types and order strictly. Questions must follow the paragraph order of the passage.
-    
-    **Question Blueprint for Part 1:**
-    1.  **Type 'vocabulary-in-context':** (Multiple Choice) Ask for the meaning of a challenging, context-dependent word from an early paragraph.
-    2.  **Type 'primary-purpose':** (Multiple Choice) Ask for the primary purpose of a specific paragraph.
-    3.  **Type 'sentence-completion':** (Open Ended - Answer is the completion) Provide an unfinished quote/idea from a paragraph and ask the user to complete it. The answer should be a short, precise phrase or sentence from the text.
-    4.  **Type 'vocabulary-in-context':** (Multiple Choice) Same as Q1, but for a word in a later paragraph.
-    5.  **Type 'main-idea':** (Multiple Choice) Ask for the main idea of a specific paragraph.
-    6.  **Type 'sentence-completion':** (Open Ended) Same as Q3.
-    7.  **Type 'not-mentioned':** (Multiple Choice) Ask which of the given options was NOT mentioned in a specific paragraph.
-    8.  **Type 'paragraph-relationship':** (Multiple Choice) Ask how a specific paragraph (e.g., [P8]) relates to the paragraph before it (e.g., [P7]).
-    9.  **Type 'insert-sentence':** (Multiple Choice - Answer is just the letter A, B, C, or D). The 'questionText' MUST be formatted with newlines like this: "Read the paragraph below and decide where the following sentence would best fit.\\n\\nSentence: '[Insert the sentence to be placed here]'\\n\\nParagraph: '[Insert the full paragraph with [A], [B], [C], and [D] markers here]'". The 'options' array MUST be ["A", "B", "C", "D"]. The 'answer' is the correct letter. The 'missingSentence' and 'paragraphWithMarkers' fields MUST NOT be used.
-    10. **Type 'cross-textual-inference':** (Multiple Choice). The 'questionText' MUST be formatted with newlines like this: "Read the short passage below and answer the question that follows, based on your understanding of BOTH the short passage and the main reading text.\\n\\nPassage: '[Insert the ~50 word additional passage here]'\\n\\nQuestion: '[Insert the actual question here]'". The 'additionalPassage' field MUST NOT be used.
-    11. **Type 'global-inference-negative':** (Multiple Choice) Ask what CANNOT be inferred from the entire text.
-    * **For randomization (10-13 questions):** If you need more than 11 questions, add more 'vocabulary-in-context' or 'main-idea' questions. If you need fewer, remove one of the duplicates (e.g., remove Q4 or Q6). Always maintain the core structure.
-`;
+/**
+ * Normalizes and validates the raw JSON object from the AI to ensure it conforms to the BueptReadingSection interface.
+ * @param rawData The raw parsed JSON from the AI.
+ * @returns A validated and normalized BueptReadingSection object.
+ * @throws An error if the data is fundamentally invalid (e.g., not an object, missing title/passage).
+ */
+const normalizeAndValidateBueptSection = (rawData: any): BueptReadingSection => {
+  if (!rawData || typeof rawData !== 'object') {
+    throw new Error("The AI returned a response that was not a valid object.");
+  }
 
-const getReading2Prompt = () => `
-    **Part 2: Inference Reading Section**
-    - **Source Material:** Generate a passage that reads like it is from a real academic paper in fields like psychology, sociology, linguistics, or environmental science. It should discuss theories, studies, and findings.
-    - **Source Credit:** You MUST create a plausible, properly formatted academic citation for this fictional paper and provide it in the 'sourceCredit' field. (e.g., "Smith, J. A. (2021). The Cognitive Effects of Bilingualism on Executive Function. Journal of Experimental Psychology, 45(3), 284-301.").
-    - **Passage:** 1800-2000 words, broken into 13-17 numbered paragraphs.
-    - **Questions:** Generate exactly 12 questions. The first 9 must follow the paragraph order. The final 3 (10, 11, 12) are a mandatory set and can refer to any earlier paragraphs.
-
-    **Question Blueprint for Part 2:**
-    1.  **Type 'phrase-in-context':** (Multiple Choice) Ask for the meaning of a specific academic or idiomatic phrase (e.g., "a priori," "pis aller," "a paradigm shift") based on its context in a paragraph.
-    2.  **Type 'case-application-mcq':** (Multiple Choice) Describe a short case/scenario. The question asks to apply a model or guideline from the text to this case.
-    3.  **Type 'authors-purpose':** (Multiple Choice) Ask why the author mentions two different phrases or concepts from different paragraphs to convey a larger idea.
-    4.  **Type 'term-application-open':** (Open Ended) Present a case and ask the student to apply a specific term explained in the passage to it.
-    5.  **Type 'author-personification':** (Multiple Choice) Refer to an author cited in the text (e.g., "Viladot (1994) in [P6]"). Ask what this author would most likely say or think about the ideas in the preceding paragraph (e.g., [P5]).
-    6.  **Type 'study-prediction':** (Multiple Choice) Based on a study mentioned in a paragraph, ask what is most likely to happen in a given new situation.
-    7.  **Type 'research-results-open':** (Open Ended) Ask a "what is the most..." question based on the results of research presented in a paragraph.
-    8.  **Type 'case-matching':** (Multiple Choice) Describe a case and ask which option from the text (e.g., a theory, a category) it is closest to, based on a study's findings.
-    9.  **Type 'research-mindset-open':** (Open Ended) Ask a question that requires the student to identify a mindset, category, or framework from the text and apply it (e.g., "According to which mindset in Berry’s four-way categorization...").
-    10. **Type 'paragraph-matching':** (Open-ended). The 'questionText' must be formatted as: "Which paragraph does the following summary best describe?\\n\\nSummary: '[Insert a unique, ~100-word summary of a paragraph here]'". The 'answer' must be the correct paragraph number string (e.g., "[P5]"). Do not provide 'options'.
-    11. **Type 'paragraph-matching':** (Open-ended). Create another, different summary and question in the same format as Q10.
-    12. **Type 'paragraph-matching':** (Open-ended). Create a third, different summary and question in the same format as Q10.
-`;
-
-
-export const generateBueptSection = async (section: 'reading1' | 'reading2'): Promise<BueptReadingSection> => {
-    const sectionPrompt = section === 'reading1' ? getReading1Prompt() : getReading2Prompt();
-
-    const prompt = `
-    You are an expert AI assistant tasked with creating a single, high-quality BUEPT (Boğaziçi University English Proficiency Exam) style reading section. The target audience is university preparatory school students, and the language level must be a mix of B1 and B2, targeting a final B2 proficiency. The entire output must be a single JSON object that conforms to the provided schema.
-
-    **Overall Structure Rules:**
-    - The section has a long passage (1800-2000 words) and a set of questions.
-    - The passage MUST be formatted with numbered paragraph markers at the start of each paragraph, like: [P1], [P2], [P3], etc. This is critical for question referencing.
-
-    ---
-    
-    **Instructions for the requested section:**
-    ${sectionPrompt}
-    `;
-
-    try {
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-pro', 
-            contents: prompt,
-            config: {
-                responseMimeType: 'application/json',
-                responseSchema: bueptReadingSectionSchema,
-                temperature: 0.6,
-            },
-        });
-
-        const jsonText = response.text.trim();
-        const sectionData = JSON.parse(jsonText);
-        return sectionData as BueptReadingSection;
-    } catch (error) {
-        console.error(`Error generating BUEPT ${section}:`, error);
-        if (error instanceof Error) {
-            throw new Error(`The AI model failed to generate a valid BUEPT section. Details: ${error.message}`);
-        }
-        throw new Error('An unknown error occurred while generating the BUEPT section.');
+  // 1. Normalize top-level structure (e.g., handle nested passage object)
+  // AI sometimes returns { passage: { title: "...", text: "..." } }
+  if (rawData.passage && typeof rawData.passage === 'object' && !Array.isArray(rawData.passage)) {
+    const nestedPassage = rawData.passage as { title?: string, text?: string | string[] };
+    if (!rawData.title && nestedPassage.title) {
+      rawData.title = nestedPassage.title;
     }
+    if (nestedPassage.text) {
+      rawData.passage = nestedPassage.text;
+    }
+  }
+  
+  // AI sometimes returns passage as an array of strings
+  if (Array.isArray(rawData.passage)) {
+      rawData.passage = rawData.passage.join('\n\n');
+  }
+
+  // 2. Validate top-level fields after potential normalization
+  if (!rawData.title || typeof rawData.title !== 'string' || !rawData.title.trim()) {
+    throw new Error("The AI response is missing a valid 'title'.");
+  }
+  if (!rawData.passage || typeof rawData.passage !== 'string' || !rawData.passage.trim()) {
+    throw new Error("The AI response is missing a valid 'passage'.");
+  }
+
+  // 3. Validate and sanitize questions array
+  let validatedQuestions: BueptQuestion[] = [];
+  if (!rawData.questions || !Array.isArray(rawData.questions)) {
+    console.warn("AI response missing 'questions' array. Proceeding with empty questions.");
+    rawData.questions = [];
+  } else {
+    validatedQuestions = rawData.questions
+      .map((q: any, index: number): BueptQuestion | null => {
+        if (!q || typeof q !== 'object') return null;
+
+        // Normalize options: AI sometimes returns an object { A: "...", B: "..." }
+        let normalizedOptions: string[] | undefined = undefined;
+        if (q.options) {
+            if (Array.isArray(q.options)) {
+                normalizedOptions = q.options.filter((opt: any) => typeof opt === 'string');
+            } else if (typeof q.options === 'object') {
+                normalizedOptions = Object.values(q.options).filter((opt: any) => typeof opt === 'string') as string[];
+            }
+        }
+        
+        const hasRequiredFields = q.questionText && typeof q.questionText === 'string' &&
+                                  q.type && typeof q.type === 'string' &&
+                                  q.answer && typeof q.answer === 'string';
+
+        if (!hasRequiredFields) {
+          console.warn("Filtering out malformed question due to missing required fields:", q);
+          return null;
+        }
+
+        return {
+          questionNumber: typeof q.questionNumber === 'number' ? q.questionNumber : index + 1,
+          questionText: q.questionText,
+          type: q.type,
+          paragraphReference: q.paragraphReference || '',
+          options: normalizedOptions,
+          answer: q.answer,
+          additionalPassage: q.additionalPassage,
+          missingSentence: q.missingSentence,
+          paragraphWithMarkers: q.paragraphWithMarkers,
+          matchOptions: Array.isArray(q.matchOptions) ? q.matchOptions.filter((opt: any) => typeof opt === 'string') : undefined,
+        };
+      })
+      .filter((q): q is BueptQuestion => q !== null); // Filter out the nulls
+  }
+  
+  // Sort questions by questionNumber to ensure order
+  validatedQuestions.sort((a, b) => a.questionNumber - b.questionNumber);
+
+  return {
+    title: rawData.title,
+    passage: rawData.passage,
+    questions: validatedQuestions,
+    sourceCredit: typeof rawData.sourceCredit === 'string' ? rawData.sourceCredit : undefined,
+  };
+};
+
+
+export const generateBueptSection = async (
+  sectionKey: 'reading1' | 'reading2'
+): Promise<BueptReadingSection> => {
+  try {
+    if (sectionKey === 'reading1') {
+      const prompt = `
+        Generate a complete BUEPT Reading 1 section. This section focuses on literal comprehension of a narrative or descriptive text.
+        
+        **Constraints:**
+        1.  **Passage:** Write a single, engaging narrative or descriptive passage of about 800-1000 words. It should be divided into 6-8 paragraphs, clearly marked with [P1], [P2], etc., at the beginning of each. The story should have characters, a plot, and a clear resolution. The language should be accessible, similar to a modern novel or a detailed feature article.
+        2.  **Questions:** Generate exactly 12-13 questions based on the passage.
+        3.  **Question Blueprint:** The questions must follow this flexible blueprint. You can choose which question types to use, but the total number must be 12-13.
+            *   **Main Idea (1-2 questions):** Ask about the main idea, purpose, or best title for a specific paragraph or the whole passage. (type: 'main-idea'). These are multiple-choice with 4 options (A, B, C, D).
+            *   **Factual Detail (4-6 questions):** Ask about specific details mentioned directly in the text. (type: 'detail'). These are multiple-choice with 4 options (A, B, C, D).
+            *   **Pronoun Reference (2-3 questions):** Ask what a specific pronoun (e.g., "it," "they," "this") in a paragraph refers to. (type: 'reference'). These are multiple-choice with 4 options (A, B, C, D).
+            *   **Vocabulary in Context (2-3 questions):** Ask for the meaning of a specific word or phrase as used in the passage. (type: 'vocabulary'). These are multiple-choice with 4 options (A, B, C, D).
+        4.  **Formatting:**
+            *   The 'questionNumber' must be sequential (1, 2, 3...).
+            *   The 'paragraphReference' must state which paragraph the question is about (e.g., "P1", "P3-P4").
+            *   The 'answer' for multiple-choice questions must be the letter of the correct option (e.g., "A", "C").
+            
+        Return a single, valid JSON object that conforms to the specified schema.
+      `;
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-pro',
+        contents: prompt,
+        config: {
+          responseMimeType: 'application/json',
+          responseSchema: bueptReadingSectionSchema,
+          temperature: 0.8,
+        },
+      });
+      const rawData = parseJsonFromMarkdown(response.text);
+      return normalizeAndValidateBueptSection(rawData);
+
+    } else if (sectionKey === 'reading2') {
+      // Step 1: Find a niche, engaging academic topic
+      const topicResponse = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: "Find a niche, specific, and engaging topic from an academic field like linguistics, anthropology, cognitive science, or niche history. Provide only the topic name.",
+        config: {
+          tools: [{ googleSearch: {} }],
+        },
+      });
+      const topic = topicResponse.text.trim();
+
+      // Step 2: Generate the section based on the found topic
+      const prompt = `
+          You are an expert in creating academic reading tests. Generate a complete BUEPT Reading 2 section based on the niche academic topic: "${topic}". This section tests inference, understanding of academic language, and complex text structures. Use Google Search to find credible information to ground your writing.
+
+          **Constraints:**
+          1.  **Passage:** Write a single, dense academic passage of about 800-1000 words. The style should be formal and objective, typical of a university-level textbook or journal article. It must be divided into 6-8 paragraphs, clearly marked with [P1], [P2], etc.
+          2.  **Questions:** Generate exactly 12-13 questions.
+          3.  **Question Blueprint:** The questions must follow this flexible blueprint. You can choose which question types to use, but the total number must be 12-13.
+              *   **Inference (3-5 questions):** Ask what can be inferred or implied from a paragraph, not stated directly. (type: 'inference'). Multiple-choice with 4 options.
+              *   **Paraphrase (2-3 questions):** Provide a sentence from the passage and ask which option best restates its meaning. (type: 'paraphrase'). Multiple-choice with 4 options.
+              *   **Insert Sentence (1-2 questions):** Provide a sentence and ask where it would best fit within a specific paragraph that has numbered markers [1], [2], etc. The 'questionText' should contain the paragraph with markers and the sentence to insert. (type: 'insert-sentence'). The answer is the number marker.
+              *   **Cross-textual Inference (1-2 questions):** Provide a short, new passage (1-2 sentences) on a related topic. Then ask a question that requires understanding both the original passage and the new one. The 'questionText' MUST contain this new passage. (type: 'cross-textual-inference'). Multiple-choice with 4 options.
+              *   **Paragraph Matching (1 question, optional):** Provide 3-4 short summaries (A, B, C, D). The question asks to match these summaries to 3 specific paragraphs from the text. The 'questionText' should contain the summaries. The answer should be in the format "P1:B, P3:A, P5:C". (type: 'paragraph-matching').
+          4.  **Formatting:**
+              *   'answer' for multiple-choice is the letter (e.g., "A").
+              *   'sourceCredit' field MUST be included, citing the web source(s) used as a single comma-separated string.
+              
+          Return ONLY a raw, single, valid JSON object that strictly adheres to the following structure. Do not wrap it in markdown. The 'title' and 'passage' must be top-level string properties. For multiple-choice questions, 'options' MUST be an array of 4 strings.
+
+          **JSON Structure Example:**
+          \`\`\`json
+          {
+            "title": "The Ethno-Ornithology of Language Evolution",
+            "passage": "[P1] The first paragraph of the passage text goes here...\\n\\n[P2] The second paragraph...",
+            "questions": [
+              {
+                "questionNumber": 1,
+                "questionText": "This is a multiple-choice inference question.",
+                "type": "inference",
+                "paragraphReference": "P1",
+                "options": ["This is option A.", "This is option B.", "This is option C.", "This is option D."],
+                "answer": "B"
+              },
+              {
+                "questionNumber": 2,
+                "questionText": "This is an insert-sentence question. The paragraph with markers [1], [2], etc. and the sentence to insert are all included here.",
+                "type": "insert-sentence",
+                "paragraphReference": "P3",
+                "answer": "2"
+              }
+            ],
+            "sourceCredit": "https://example.com/source1, https://example.com/source2"
+          }
+          \`\`\`
+        `;
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: prompt,
+        config: {
+          tools: [{ googleSearch: {} }],
+          temperature: 0.5,
+        },
+      });
+      const rawData = parseJsonFromMarkdown(response.text);
+      return normalizeAndValidateBueptSection(rawData);
+    }
+    throw new Error('Invalid section key provided.');
+
+  } catch (error) {
+    console.error(`Error generating BUEPT ${sectionKey}:`, error);
+    // Throw a generic, user-friendly error message. The specific error is logged above for debugging.
+    throw new Error('Failed to generate BUEPT section. Please try again.');
+  }
 };

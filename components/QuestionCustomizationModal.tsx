@@ -1,7 +1,12 @@
-import React, { useState, useEffect } from 'react';
-import { UI_TEXT, PASSAGE_LENGTH_OPTIONS_TRANSLATED } from '../translations';
-import type { Language } from '../types';
+import React from 'react';
 import SparklesIcon from './icons/SparklesIcon';
+
+const PASSAGE_LENGTH_OPTIONS = [
+  { label: 'Quick Read', value: 250, description: '~1/2 Page' },
+  { label: 'Standard', value: 500, description: '~1 Page' },
+  { label: 'In-Depth', value: 750, description: '~1.5 Pages' },
+  { label: 'Extended', value: 1000, description: '~2+ Pages' },
+];
 
 interface QuestionCustomizationModalProps {
   isOpen: boolean;
@@ -11,7 +16,6 @@ interface QuestionCustomizationModalProps {
   setPassageLength: (length: number) => void;
   numberOfQuestions: number;
   setNumberOfQuestions: (num: number) => void;
-  language: Language;
   maxQuestions: number;
 }
 
@@ -23,7 +27,6 @@ const QuestionCustomizationModal: React.FC<QuestionCustomizationModalProps> = ({
   setPassageLength,
   numberOfQuestions,
   setNumberOfQuestions,
-  language,
   maxQuestions,
 }) => {
   if (!isOpen) {
@@ -44,21 +47,21 @@ const QuestionCustomizationModal: React.FC<QuestionCustomizationModalProps> = ({
       >
         <div className="p-6">
           <h2 id="modal-title" className="text-xl font-bold text-slate-800 dark:text-slate-100">
-            {UI_TEXT.passageModalTitle[language]}
+            Customize Your Lesson
           </h2>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            {UI_TEXT.passageModalSubtitle[language]}
+            Choose the desired length for the passage and number of questions.
           </p>
         </div>
         <div className="px-6 pb-6 space-y-6 border-t border-slate-200 dark:border-slate-700 pt-6">
             <div>
               <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                {UI_TEXT.passageLengthLabel[language]}
+                Passage Length
               </label>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                {PASSAGE_LENGTH_OPTIONS_TRANSLATED.map(option => (
+                {PASSAGE_LENGTH_OPTIONS.map(option => (
                   <button
-                    key={option.label.en}
+                    key={option.label}
                     type="button"
                     onClick={() => setPassageLength(option.value)}
                     className={`text-center p-3 rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-slate-800 focus:ring-boun-light-blue dark:focus:ring-blue-500 ${
@@ -67,8 +70,8 @@ const QuestionCustomizationModal: React.FC<QuestionCustomizationModalProps> = ({
                         : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
                     }`}
                   >
-                    <span className="text-sm font-semibold block">{option.label[language]}</span>
-                    <span className="text-xs text-slate-500 dark:text-slate-400 block">{option.description[language]}</span>
+                    <span className="text-sm font-semibold block">{option.label}</span>
+                    <span className="text-xs text-slate-500 dark:text-slate-400 block">{option.description}</span>
                   </button>
                 ))}
               </div>
@@ -76,7 +79,7 @@ const QuestionCustomizationModal: React.FC<QuestionCustomizationModalProps> = ({
 
             <div>
               <label htmlFor="modal-question-count" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                {UI_TEXT.questionCountLabel[language]} ({numberOfQuestions} / {maxQuestions})
+                Number of Questions ({numberOfQuestions} / {maxQuestions})
               </label>
               <input
                 id="modal-question-count"
@@ -106,7 +109,7 @@ const QuestionCustomizationModal: React.FC<QuestionCustomizationModalProps> = ({
                   className="flex justify-center items-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-boun-light-blue hover:bg-opacity-90 focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-slate-800 focus:ring-boun-light-blue"
               >
                   <SparklesIcon className="w-5 h-5 mr-2" />
-                  {UI_TEXT.questionModalConfirmButton[language]}
+                  Confirm & Generate
               </button>
             </div>
         </div>

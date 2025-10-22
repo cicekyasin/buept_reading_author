@@ -1,3 +1,5 @@
+
+
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import Header from './components/Header';
 import InputForm from './components/InputForm';
@@ -8,16 +10,14 @@ import PassageViewerModal from './components/PassageViewerModal';
 import ExamGenerator from './components/ExamGenerator';
 import InteractiveLessonTest from './components/InteractiveLessonTest';
 import { generateLessonPlan, findSourcesForPassage, gradeOpenEndedAnswer } from './services/geminiService';
-import type { CEFRLevel, LessonPlan, Source, Language, UserRole, AppMode, UserAnswers, GradingResults, GradingResult } from './types';
-import { LOADING_MESSAGES } from './translations';
-
-const LOADING_MESSAGE_KEYS = Object.keys(LOADING_MESSAGES);
+import type { CEFRLevel, LessonPlan, Source, UserRole, AppMode, UserAnswers, GradingResults, GradingResult, CreditSystemMode } from './types';
+import { useCredits } from './hooks/useCredits';
 
 const LOCAL_STORAGE_KEY_LESSON = 'fled-saved-lesson-plan';
 const LOCAL_STORAGE_KEY_AUTOSAVE = 'fled-autosave-draft';
 const LOCAL_STORAGE_KEY_THEME = 'fled-theme';
-const LOCAL_STORAGE_KEY_LANG = 'fled-language';
 const LOCAL_STORAGE_KEY_ROLE = 'fled-user-role';
+const LOCAL_STORAGE_KEY_CREDIT_MODE = 'fled-credit-system-mode';
 
 type HistoryEntry = {
   lessonPlan: LessonPlan;
@@ -25,6 +25,16 @@ type HistoryEntry = {
 };
 
 const App: React.FC = () => {
+  const [isDevMode, setIsDevMode] = useState<boolean>(() => {
+    return sessionStorage.getItem('fled-dev-mode') === 'true';
+  });
+  const [togglingDevMode, setTogglingDevMode] = useState(false);
+  const [creditSystemMode, setCreditSystemMode] = useState<CreditSystemMode>(() => {
+    return (localStorage.getItem(LOCAL_STORAGE_KEY_CREDIT_MODE) as CreditSystemMode) || 'simple';
+  });
+  
+  const { credits, deductCredits, isLoading: isCreditsLoading } = useCredits(isDevMode, creditSystemMode);
+
   // App Mode State
   const [appMode, setAppMode] = useState<AppMode>('designer');
 
@@ -43,7 +53,7 @@ const App: React.FC = () => {
   const [sources, setSources] = useState<Source[] | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isSearchingSources, setIsSearchingSources] = useState<boolean>(false);
-  const [loadingMessage, setLoadingMessage] = useState<string>(LOADING_MESSAGES.CONNECTING.en);
+  const [loadingMessage, setLoadingMessage] = useState<string>('Connecting to the FLED-AI...');
   const [savedLessonExists, setSavedLessonExists] = useState<boolean>(false);
   const [isInputCollapsed, setIsInputCollapsed] = useState<boolean>(false);
   const [isQuestionModalOpen, setIsQuestionModalOpen] = useState<boolean>(false);
@@ -61,7 +71,6 @@ const App: React.FC = () => {
   // General App State
   const [error, setError] = useState<string | null>(null);
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
-  const [language, setLanguage] = useState<Language>('en');
   const [userRole, setUserRole] = useState<UserRole>('student');
 
   const loadingIntervalRef = useRef<number | null>(null);
@@ -80,16 +89,12 @@ const App: React.FC = () => {
     }
   }, [maxQuestions, numberOfQuestions]);
 
-  // Initialize Theme, Language, Role, and check for drafts
+  // Initialize Theme, Role, and check for drafts
   useEffect(() => {
     const savedTheme = localStorage.getItem(LOCAL_STORAGE_KEY_THEME) as 'light' | 'dark' | null;
     const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
     setTheme(savedTheme || (prefersDark ? 'dark' : 'light'));
     
-    const savedLang = localStorage.getItem(LOCAL_STORAGE_KEY_LANG) as Language | null;
-    const browserLang = navigator.language.split('-')[0];
-    setLanguage(savedLang || (browserLang === 'tr' ? 'tr' : 'en'));
-
     const savedRole = localStorage.getItem(LOCAL_STORAGE_KEY_ROLE) as UserRole | null;
     setUserRole(savedRole || 'student');
 
@@ -120,11 +125,6 @@ const App: React.FC = () => {
       localStorage.setItem(LOCAL_STORAGE_KEY_THEME, 'light');
     }
   }, [theme]);
-  
-  // Update localStorage when language changes
-  useEffect(() => {
-    localStorage.setItem(LOCAL_STORAGE_KEY_LANG, language);
-  }, [language]);
 
   // Update localStorage when user role changes
   useEffect(() => {
@@ -167,11 +167,19 @@ const App: React.FC = () => {
   }, [formState, lessonPlan, isLoading, appMode]);
   
   const startLoadingMessages = () => {
+    const messages = [
+      'Connecting to the FLED-AI...',
+      'Crafting a level-appropriate reading passage...',
+      'Selecting key Tier 2 vocabulary...',
+      'Writing comprehension questions...',
+      'Formulating the pedagogical rationale...',
+      'Almost there...',
+    ];
     let index = 0;
-    setLoadingMessage(LOADING_MESSAGES[LOADING_MESSAGE_KEYS[index]][language]);
+    setLoadingMessage(messages[index]);
     loadingIntervalRef.current = window.setInterval(() => {
-      index = (index + 1) % LOADING_MESSAGE_KEYS.length;
-      setLoadingMessage(LOADING_MESSAGES[LOADING_MESSAGE_KEYS[index]][language]);
+      index = (index + 1) % messages.length;
+      setLoadingMessage(messages[index]);
     }, 2500);
   };
 
@@ -188,6 +196,17 @@ const App: React.FC = () => {
     }
     localStorage.removeItem(LOCAL_STORAGE_KEY_AUTOSAVE);
   }, []);
+  
+  // Dev mode activation logic
+  const handleToggleDevMode = useCallback(() => {
+    setTogglingDevMode(true);
+    const currentDevMode = sessionStorage.getItem('fled-dev-mode') === 'true';
+    sessionStorage.setItem('fled-dev-mode', String(!currentDevMode));
+    setTimeout(() => {
+      window.location.reload();
+    }, 1000); // Wait for message to be visible
+  }, []);
+
 
   const handleGenerate = useCallback(() => {
     if (!topic.trim()) {
@@ -199,6 +218,21 @@ const App: React.FC = () => {
   }, [topic]);
   
   const handleConfirmGeneration = useCallback(async () => {
+    if (!credits || isCreditsLoading) return; // Wait for credits to load
+
+    const canGenerate = creditSystemMode === 'simple'
+        ? credits.shared >= credits.costs.lessonPlan
+        : credits.lessonPlan.remaining > 0;
+
+    if (!canGenerate && !isDevMode) {
+        const message = creditSystemMode === 'simple'
+            ? `You need ${credits.costs.lessonPlan} credits. Credits reset daily.`
+            : `You have used your ${credits.lessonPlan.total} daily lesson plan generations.`;
+        setError(message);
+        setIsQuestionModalOpen(false);
+        return;
+    }
+
     setIsQuestionModalOpen(false);
     setIsLoading(true);
     setIsSearchingSources(true);
@@ -219,6 +253,7 @@ const App: React.FC = () => {
           pedagogicalFocus,
           customVocabulary
       );
+      deductCredits('lessonPlan');
       const newHistoryEntry: HistoryEntry = { lessonPlan: plan, sources: null };
       
       setLessonPlan(plan);
@@ -252,12 +287,15 @@ const App: React.FC = () => {
     } catch (err) {
       console.error(err);
       const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
-      setError(`Failed to generate lesson plan. ${errorMessage}`);
+      setError(errorMessage);
       setIsLoading(false);
       stopLoadingMessages();
       setIsSearchingSources(false);
     }
-  }, [topic, cefrLevel, advancedInstructions, passageLength, language, numberOfQuestions, exemplarPassage, exemplarQuestions, pedagogicalFocus, customVocabulary, clearAutoSave]);
+  }, [
+    topic, cefrLevel, advancedInstructions, passageLength, numberOfQuestions, exemplarPassage, 
+    exemplarQuestions, pedagogicalFocus, customVocabulary, clearAutoSave, credits, deductCredits, creditSystemMode, isCreditsLoading, isDevMode
+  ]);
 
   const handleSave = useCallback(() => {
     if (lessonPlan) {
@@ -401,10 +439,13 @@ const App: React.FC = () => {
             isLoading={isLoading}
             onLoad={handleLoad}
             savedLessonExists={savedLessonExists}
-            language={language}
             draftToRestore={draftToRestore}
             onRestoreDraft={handleRestoreDraft}
             onDiscardDraft={handleDiscardDraft}
+            credits={credits}
+            isCreditsLoading={isCreditsLoading}
+            onActivateDevMode={handleToggleDevMode}
+            isDevMode={isDevMode}
           />
         </div>
       )}
@@ -416,7 +457,6 @@ const App: React.FC = () => {
                 onExpand={() => setIsInputCollapsed(false)}
                 onLoad={handleLoad}
                 savedLessonExists={savedLessonExists}
-                language={language}
               />
           </div>
         )}
@@ -428,27 +468,38 @@ const App: React.FC = () => {
             error={error}
             loadingMessage={loadingMessage}
             onSave={handleSave}
-            language={language}
             userRole={userRole}
             onExpandPassage={() => setIsPassageExpanded(true)}
             onStartTest={handleStartLessonTest}
+            isDevMode={isDevMode}
+            creditSystemMode={creditSystemMode}
+            setCreditSystemMode={setCreditSystemMode}
+            onToggleDevMode={handleToggleDevMode}
           />
       </div>
     </div>
   );
 
   const renderExamMode = () => (
-    <ExamGenerator language={language} />
+    <ExamGenerator
+      credits={credits}
+      isCreditsLoading={isCreditsLoading}
+      deductCredits={deductCredits}
+      isDevMode={isDevMode}
+    />
   );
 
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-200 transition-colors duration-300">
+      {togglingDevMode && (
+        <div className="fixed inset-0 bg-slate-900/70 z-50 flex items-center justify-center backdrop-blur-sm">
+          <p className="text-2xl font-bold text-white animate-pulse">Dev Mode Toggled. Reloading...</p>
+        </div>
+      )}
       <Header 
         theme={theme} 
         setTheme={setTheme} 
-        language={language} 
-        setLanguage={setLanguage} 
         userRole={userRole}
         setUserRole={setUserRole}
         history={history}
@@ -456,6 +507,7 @@ const App: React.FC = () => {
         onSelectHistory={handleSelectHistory}
         appMode={appMode}
         setAppMode={setAppMode}
+        isDevMode={isDevMode}
       />
       <main className="flex-grow w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {appMode === 'designer' ? renderDesignerMode() : renderExamMode()}
@@ -476,7 +528,6 @@ const App: React.FC = () => {
             setPassageLength={setPassageLength}
             numberOfQuestions={numberOfQuestions}
             setNumberOfQuestions={setNumberOfQuestions}
-            language={language}
             maxQuestions={maxQuestions}
           />
 
@@ -484,13 +535,11 @@ const App: React.FC = () => {
             isOpen={isPassageExpanded}
             onClose={() => setIsPassageExpanded(false)}
             lessonPlan={lessonPlan}
-            language={language}
           />
 
           {isLessonTestActive && lessonPlan && (
             <InteractiveLessonTest 
               lessonPlan={lessonPlan}
-              language={language}
               userAnswers={lessonUserAnswers}
               onAnswerChange={(qNum, ans) => setLessonUserAnswers(prev => ({...prev, [qNum]: ans}))}
               gradingResults={lessonGradingResults}

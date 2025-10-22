@@ -1,7 +1,9 @@
+
+
 import React, { useState, useEffect } from 'react';
 import { CEFR_LEVELS, QUICK_CEFR_SETS } from '../constants';
-import { UI_TEXT, CEFR_DESCRIPTIONS_TRANSLATED } from '../translations';
-import type { CEFRLevel, Language } from '../types';
+import { CEFR_DESCRIPTIONS } from '../constants';
+import type { CEFRLevel } from '../types';
 import SparklesIcon from './icons/SparklesIcon';
 import LoadIcon from './icons/LoadIcon';
 import DiceIcon from './icons/DiceIcon';
@@ -27,10 +29,13 @@ interface InputFormProps {
   isLoading: boolean;
   onLoad: () => void;
   savedLessonExists: boolean;
-  language: Language;
   draftToRestore: any | null;
   onRestoreDraft: () => void;
   onDiscardDraft: () => void;
+  credits: any; // Can be simple or complex credit object
+  isCreditsLoading: boolean;
+  onActivateDevMode: () => void;
+  isDevMode: boolean;
 }
 
 const InfoIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
@@ -58,24 +63,39 @@ const InputForm: React.FC<InputFormProps> = ({
   isLoading,
   onLoad,
   savedLessonExists,
-  language,
   draftToRestore,
   onRestoreDraft,
   onDiscardDraft,
+  credits,
+  isCreditsLoading,
+  onActivateDevMode,
+  isDevMode,
 }) => {
   const [isAdvancedVisible, setIsAdvancedVisible] = useState(false);
   const [isRandomizing, setIsRandomizing] = useState(false);
   const [cefrDescription, setCefrDescription] = useState<string>(
-    CEFR_DESCRIPTIONS_TRANSLATED[cefrLevel][language]
+    CEFR_DESCRIPTIONS[cefrLevel]
   );
+  
+  const DEV_PASSWORD = '26.12.23=GY';
 
   useEffect(() => {
-    setCefrDescription(CEFR_DESCRIPTIONS_TRANSLATED[cefrLevel][language]);
-  }, [cefrLevel, language]);
+    setCefrDescription(CEFR_DESCRIPTIONS[cefrLevel]);
+  }, [cefrLevel]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     onGenerate();
+  };
+
+  const handleTopicChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setTopic(value);
+    if (value === DEV_PASSWORD) {
+        onActivateDevMode();
+        // Clear the input after a short delay to allow state update to propagate
+        setTimeout(() => setTopic(''), 100); 
+    }
   };
 
   const handleRandomizeTopic = async () => {
@@ -101,6 +121,35 @@ const InputForm: React.FC<InputFormProps> = ({
     </svg>
   );
 
+  const getCreditStatus = () => {
+    if (isDevMode) {
+      return { canGenerate: true, message: "Generate Lesson Plan" };
+    }
+    if (isCreditsLoading || !credits) {
+      return { canGenerate: false, message: 'Loading Credits...' };
+    }
+    
+    if (credits.system === 'simple') {
+      const canGenerate = credits.shared >= credits.costs.lessonPlan;
+      const buttonText = canGenerate 
+        ? `Generate Lesson Plan (${credits.costs.lessonPlan} Credits)`
+        : `Not Enough Credits`;
+      return { canGenerate, message: buttonText };
+    }
+    
+    if (credits.system === 'complex') {
+      const canGenerate = credits.lessonPlan.remaining > 0;
+      const buttonText = canGenerate 
+        ? `Generate Lesson Plan (${credits.lessonPlan.remaining}/${credits.lessonPlan.total} Left)`
+        : `No Generations Left Today`;
+      return { canGenerate, message: buttonText };
+    }
+
+    return { canGenerate: false, message: 'Invalid Credit System' };
+  };
+
+  const { canGenerate, message: buttonText } = getCreditStatus();
+
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       {draftToRestore && (
@@ -111,7 +160,7 @@ const InputForm: React.FC<InputFormProps> = ({
             </div>
             <div className="ml-3 flex-1 md:flex md:justify-between">
               <p className="text-sm text-yellow-700 dark:text-yellow-200">
-                {UI_TEXT.autosaveRestorePrompt[language]}
+                You have an unsaved draft. Would you like to restore it?
               </p>
               <div className="mt-3 md:mt-0 md:ml-4 flex space-x-3">
                 <button
@@ -119,14 +168,14 @@ const InputForm: React.FC<InputFormProps> = ({
                   onClick={onRestoreDraft}
                   className="whitespace-nowrap rounded-md bg-yellow-100 dark:bg-yellow-800 px-2 py-1.5 text-sm font-medium text-yellow-800 dark:text-yellow-100 hover:bg-yellow-200 dark:hover:bg-yellow-700 focus:outline-none focus:ring-2 focus:ring-yellow-600 focus:ring-offset-2 dark:focus:ring-offset-yellow-900/20 focus:ring-offset-yellow-50"
                 >
-                  {UI_TEXT.restoreButton[language]}
+                  Restore
                 </button>
                 <button
                   type="button"
                   onClick={onDiscardDraft}
                   className="whitespace-nowrap rounded-md px-2 py-1.5 text-sm font-medium text-yellow-700 dark:text-yellow-300 hover:bg-yellow-100 dark:hover:bg-yellow-800 focus:outline-none focus:ring-2 focus:ring-yellow-600 focus:ring-offset-2 dark:focus:ring-offset-yellow-900/20 focus:ring-offset-yellow-50"
                 >
-                  {UI_TEXT.discardButton[language]}
+                  Discard
                 </button>
               </div>
             </div>
@@ -135,15 +184,15 @@ const InputForm: React.FC<InputFormProps> = ({
       )}
       <div>
         <label htmlFor="topic" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-          {UI_TEXT.topicLabel[language]}
+          Theme / Topic
         </label>
         <div className="flex items-center space-x-2">
             <input
               type="text"
               id="topic"
               value={topic}
-              onChange={(e) => setTopic(e.target.value)}
-              placeholder={UI_TEXT.topicPlaceholder[language]}
+              onChange={handleTopicChange}
+              placeholder="e.g., 'A day at the Grand Bazaar'"
               className="block w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm placeholder-slate-400 dark:placeholder-slate-500 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-boun-light-blue focus:border-boun-light-blue dark:focus:ring-blue-500 dark:focus:border-blue-500 sm:text-sm"
               required
             />
@@ -151,7 +200,7 @@ const InputForm: React.FC<InputFormProps> = ({
               type="button"
               onClick={handleRandomizeTopic}
               disabled={isRandomizing}
-              title={UI_TEXT.randomizeTopicTooltip[language]}
+              title="Generate a random topic idea"
               className="flex-shrink-0 p-2 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm text-sm font-medium text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-700 hover:bg-slate-50 dark:hover:bg-slate-600 focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-slate-800 focus:ring-boun-light-blue dark:focus:ring-blue-500 disabled:opacity-50 disabled:cursor-wait"
             >
               {isRandomizing ? (
@@ -166,7 +215,7 @@ const InputForm: React.FC<InputFormProps> = ({
       <div className="space-y-2">
          <div className="flex justify-between items-center">
             <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-                {UI_TEXT.cefrLabel[language]}
+                Target CEFR Level
             </label>
             <button
                 type="button"
@@ -175,7 +224,7 @@ const InputForm: React.FC<InputFormProps> = ({
                 aria-expanded={isAdvancedVisible}
                 aria-controls="advanced-options-panel"
             >
-                <span>{UI_TEXT.advancedLabel[language]}</span>
+                <span>Advanced</span>
                 <ChevronDownIcon
                     className={`w-4 h-4 ml-1 transition-transform duration-200 ${
                         isAdvancedVisible ? 'rotate-180' : ''
@@ -188,7 +237,7 @@ const InputForm: React.FC<InputFormProps> = ({
             <div 
               key={group.main} 
               className="relative group flex-1"
-              onMouseLeave={() => setCefrDescription(CEFR_DESCRIPTIONS_TRANSLATED[cefrLevel][language])}
+              onMouseLeave={() => setCefrDescription(CEFR_DESCRIPTIONS[cefrLevel])}
             >
               <button
                 type="button"
@@ -196,7 +245,7 @@ const InputForm: React.FC<InputFormProps> = ({
                 aria-expanded="false"
                 onMouseEnter={() => {
                   const baseLevel = group.sublevels.find(l => l === group.main) || group.sublevels[0];
-                  setCefrDescription(CEFR_DESCRIPTIONS_TRANSLATED[baseLevel][language]);
+                  setCefrDescription(CEFR_DESCRIPTIONS[baseLevel]);
                 }}
                 className={`w-full py-2 px-4 rounded-md group-hover:rounded-b-none text-sm font-semibold transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-slate-800 focus:ring-boun-light-blue dark:focus:ring-blue-500 ${
                   cefrLevel.startsWith(group.main)
@@ -217,7 +266,7 @@ const InputForm: React.FC<InputFormProps> = ({
                       type="button"
                       role="menuitem"
                       onClick={() => setCefrLevel(level)}
-                      onMouseEnter={() => setCefrDescription(CEFR_DESCRIPTIONS_TRANSLATED[level][language])}
+                      onMouseEnter={() => setCefrDescription(CEFR_DESCRIPTIONS[level])}
                       className={`block w-full text-left px-4 py-2 text-sm transition-colors ${
                         cefrLevel === level
                           ? 'bg-blue-100 dark:bg-blue-900/50 text-boun-blue dark:text-blue-300 font-semibold'
@@ -236,7 +285,7 @@ const InputForm: React.FC<InputFormProps> = ({
         <div className="pt-2">
           <div className="bg-slate-50/70 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-md p-3 text-sm text-slate-600 dark:text-slate-400 min-h-[64px] transition-all duration-200 flex items-center">
             <p>
-              <span className="font-semibold text-slate-700 dark:text-slate-300">{UI_TEXT.levelDescriptionLabel[language]}</span> {cefrDescription}
+              <span className="font-semibold text-slate-700 dark:text-slate-300">Level Description:</span> {cefrDescription}
             </p>
           </div>
         </div>
@@ -250,7 +299,7 @@ const InputForm: React.FC<InputFormProps> = ({
             <div className="space-y-6 p-4 bg-slate-50/70 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700">
                 <div>
                   <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-2">
-                    {UI_TEXT.quickSetsLabel[language]}
+                    Quick Sets
                   </label>
                   <div className="flex space-x-2">
                     {QUICK_CEFR_SETS.map(({ label, level }) => (
@@ -272,72 +321,72 @@ const InputForm: React.FC<InputFormProps> = ({
 
                 <div>
                   <label htmlFor="advanced-instructions" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                    {UI_TEXT.advancedInstructionsLabel[language]} <span className="text-slate-400 dark:text-slate-500">{UI_TEXT.advancedInstructionsOptional[language]}</span>
+                    General Instructions <span className="text-slate-400 dark:text-slate-500">(Optional)</span>
                   </label>
                   <textarea
                     id="advanced-instructions"
                     rows={2}
                     value={advancedInstructions}
                     onChange={(e) => setAdvancedInstructions(e.target.value)}
-                    placeholder={UI_TEXT.advancedInstructionsPlaceholder[language]}
+                    placeholder="e.g., 'Include a character named Ali.'"
                     className="block w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm placeholder-slate-400 dark:placeholder-slate-500 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-boun-light-blue focus:border-boun-light-blue dark:focus:ring-blue-500 dark:focus:border-blue-500 sm:text-sm"
                   />
                 </div>
                 
                 <div className="border-t border-slate-300 dark:border-slate-600 pt-6">
                   <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200 mb-2">
-                    {UI_TEXT.pedagogicalPreferencesLabel[language]}
+                    Pedagogical Preferences
                   </h3>
                   <div className="space-y-4">
                     <div>
                       <label htmlFor="pedagogical-focus" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                        {UI_TEXT.pedagogicalFocusLabel[language]}
+                        Custom Pedagogical Focus
                       </label>
                       <input
                         type="text"
                         id="pedagogical-focus"
                         value={pedagogicalFocus}
                         onChange={(e) => setPedagogicalFocus(e.target.value)}
-                        placeholder={UI_TEXT.pedagogicalFocusPlaceholder[language]}
+                        placeholder="e.g., 'Focus on using the present perfect tense.'"
                         className="block w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm placeholder-slate-400 dark:placeholder-slate-500 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-boun-light-blue focus:border-boun-light-blue dark:focus:ring-blue-500 dark:focus:border-blue-500 sm:text-sm"
                       />
                     </div>
                     <div>
                       <label htmlFor="exemplar-passage" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                        {UI_TEXT.exemplarPassageLabel[language]}
+                        Exemplar Passage (Style Guide)
                       </label>
                       <textarea
                         id="exemplar-passage"
                         rows={3}
                         value={exemplarPassage}
                         onChange={(e) => setExemplarPassage(e.target.value)}
-                        placeholder={UI_TEXT.exemplarPassagePlaceholder[language]}
+                        placeholder="Paste a short passage here to guide the AI's writing style and tone."
                         className="block w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm placeholder-slate-400 dark:placeholder-slate-500 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-boun-light-blue focus:border-boun-light-blue dark:focus:ring-blue-500 dark:focus:border-blue-500 sm:text-sm"
                       />
                     </div>
                      <div>
                       <label htmlFor="exemplar-questions" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                        {UI_TEXT.exemplarQuestionsLabel[language]}
+                        Exemplar Questions (Style Guide)
                       </label>
                       <textarea
                         id="exemplar-questions"
                         rows={3}
                         value={exemplarQuestions}
                         onChange={(e) => setExemplarQuestions(e.target.value)}
-                        placeholder={UI_TEXT.exemplarQuestionsPlaceholder[language]}
+                        placeholder="Provide 1-2 example questions to guide the AI's question style."
                         className="block w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm placeholder-slate-400 dark:placeholder-slate-500 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-boun-light-blue focus:border-boun-light-blue dark:focus:ring-blue-500 dark:focus:border-blue-500 sm:text-sm"
                       />
                     </div>
                     <div>
                       <label htmlFor="custom-vocabulary" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                        {UI_TEXT.customVocabularyLabel[language]}
+                        Required Vocabulary (comma-separated)
                       </label>
                       <textarea
                         id="custom-vocabulary"
                         rows={2}
                         value={customVocabulary}
                         onChange={(e) => setCustomVocabulary(e.target.value)}
-                        placeholder={UI_TEXT.customVocabularyPlaceholder[language]}
+                        placeholder="e.g., sustainable, ecosystem, conservation"
                         className="block w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm placeholder-slate-400 dark:placeholder-slate-500 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-boun-light-blue focus:border-boun-light-blue dark:focus:ring-blue-500 dark:focus:border-blue-500 sm:text-sm"
                       />
                     </div>
@@ -347,32 +396,34 @@ const InputForm: React.FC<InputFormProps> = ({
         </div>
       </div>
 
-      <div className="pt-2 flex items-center space-x-3">
-        <button
-          type="submit"
-          disabled={isLoading}
-          className="flex-grow flex justify-center items-center py-3 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-boun-light-blue hover:bg-opacity-90 focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-slate-800 focus:ring-boun-light-blue disabled:bg-opacity-50 disabled:cursor-not-allowed"
-        >
-          {isLoading ? (
-            UI_TEXT.generatingButton[language]
-          ) : (
-            <>
-              <SparklesIcon className="w-5 h-5 mr-2" />
-              {UI_TEXT.generateButton[language]}
-            </>
-          )}
-        </button>
-        <button
-          type="button"
-          onClick={onLoad}
-          disabled={!savedLessonExists || isLoading}
-          aria-label={UI_TEXT.loadButtonAriaLabel[language]}
-          title={UI_TEXT.loadButtonAriaLabel[language]}
-          className="flex-shrink-0 flex items-center justify-center py-3 px-4 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm text-sm font-medium text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-700 hover:bg-slate-50 dark:hover:bg-slate-600 focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-slate-800 focus:ring-boun-light-blue dark:focus:ring-blue-500 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed dark:disabled:bg-slate-800 dark:disabled:text-slate-500"
-        >
-          <LoadIcon className="w-5 h-5 mr-2" />
-          {UI_TEXT.loadButton[language]}
-        </button>
+      <div className="pt-2">
+        <div className="flex items-center space-x-3">
+          <button
+            type="submit"
+            disabled={isLoading || isCreditsLoading || !canGenerate}
+            className="flex-grow flex justify-center items-center py-3 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-boun-light-blue hover:bg-opacity-90 focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-slate-800 focus:ring-boun-light-blue disabled:bg-slate-500 disabled:cursor-not-allowed"
+          >
+            {isLoading ? (
+              'Generating...'
+            ) : (
+              <>
+                <SparklesIcon className="w-5 h-5 mr-2" />
+                <span>{buttonText}</span>
+              </>
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={onLoad}
+            disabled={!savedLessonExists || isLoading}
+            aria-label="Load saved lesson"
+            title="Load saved lesson"
+            className="flex-shrink-0 flex items-center justify-center py-3 px-4 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm text-sm font-medium text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-700 hover:bg-slate-50 dark:hover:bg-slate-600 focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-slate-800 focus:ring-boun-light-blue dark:focus:ring-blue-500 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed dark:disabled:bg-slate-800 dark:disabled:text-slate-500"
+          >
+            <LoadIcon className="w-5 h-5 mr-2" />
+            Load
+          </button>
+        </div>
       </div>
     </form>
   );

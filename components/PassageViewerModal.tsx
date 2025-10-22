@@ -1,7 +1,6 @@
 import React, { useMemo } from 'react';
 import { jsPDF } from 'jspdf';
-import type { LessonPlan, Language, ComprehensionQuestion } from '../types';
-import { UI_TEXT } from '../translations';
+import type { LessonPlan, ComprehensionQuestion } from '../types';
 import CollapseIcon from './icons/CollapseIcon';
 import BookOpenIcon from './icons/BookOpenIcon';
 import QuestionMarkCircleIcon from './icons/QuestionMarkCircleIcon';
@@ -11,10 +10,9 @@ interface PassageViewerModalProps {
   isOpen: boolean;
   onClose: () => void;
   lessonPlan: LessonPlan | null;
-  language: Language;
 }
 
-const PassageViewerModal: React.FC<PassageViewerModalProps> = ({ isOpen, onClose, lessonPlan, language }) => {
+const PassageViewerModal: React.FC<PassageViewerModalProps> = ({ isOpen, onClose, lessonPlan }) => {
   if (!isOpen || !lessonPlan) return null;
 
   const categorizedQuestions = useMemo(() => {
@@ -90,12 +88,12 @@ const PassageViewerModal: React.FC<PassageViewerModalProps> = ({ isOpen, onClose
     addTextWithWrap(`CEFR Level: ${lessonPlan.cefrLevel}`, { size: 12, style: 'italic', color: '#555555' });
     yPos += 8;
     
-    addTextWithWrap(UI_TEXT.passageTitle[language], { size: 16, style: 'bold' });
+    addTextWithWrap("Reading Passage", { size: 16, style: 'bold' });
     yPos -= 2;
     lessonPlan.readingPassage.split('\n\n').forEach(p => addTextWithWrap(p, { size: 11 }));
     yPos += 10;
 
-    addTextWithWrap(UI_TEXT.questionsTitle[language], { size: 16, style: 'bold' });
+    addTextWithWrap("Comprehension Questions", { size: 16, style: 'bold' });
     yPos -= 2;
 
     const renderQuestions = (qs: ComprehensionQuestion[], title: string) => {
@@ -109,15 +107,15 @@ const PassageViewerModal: React.FC<PassageViewerModalProps> = ({ isOpen, onClose
             addTextWithWrap(`${String.fromCharCode(97 + j)}) ${opt}`, { size: 11, style: isAnswer ? 'bold' : 'normal', color: isAnswer ? '#003366' : '#000000' });
           });
         }
-         addTextWithWrap(`${UI_TEXT.answerKey[language]}: ${q.answer}`, { size: 11, style: 'italic', color: '#003366' });
+         addTextWithWrap(`Answer Key: ${q.answer}`, { size: 11, style: 'italic', color: '#003366' });
          yPos += 4;
       });
       yPos += 5;
     };
     
-    renderQuestions(categorizedQuestions?.['true-false'], UI_TEXT.questionTrueFalseTitle[language]);
-    renderQuestions(categorizedQuestions?.['multiple-choice'], UI_TEXT.questionMultipleChoiceTitle[language]);
-    renderQuestions(categorizedQuestions?.['short-answer'], UI_TEXT.questionShortAnswerTitle[language]);
+    renderQuestions(categorizedQuestions?.['true-false'], "True / False");
+    renderQuestions(categorizedQuestions?.['multiple-choice'], "Multiple Choice");
+    renderQuestions(categorizedQuestions?.['short-answer'], "Short Answer");
 
     doc.save(`${lessonPlan.title.replace(/[\s\W]+/g, '_')}.pdf`);
   };
@@ -142,16 +140,16 @@ const PassageViewerModal: React.FC<PassageViewerModalProps> = ({ isOpen, onClose
           <div className="flex items-center space-x-2">
             <button
               onClick={handleDownloadPdf}
-              title={UI_TEXT.pdfTooltip[language]}
-              aria-label={UI_TEXT.pdfTooltip[language]}
+              title="Download as PDF"
+              aria-label="Download as PDF"
               className="p-2 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-slate-800 focus:ring-boun-light-blue"
             >
               <PdfIcon className="w-6 h-6" />
             </button>
             <button
               onClick={onClose}
-              title={UI_TEXT.collapseTooltip[language]}
-              aria-label={UI_TEXT.collapseTooltip[language]}
+              title="Collapse View"
+              aria-label="Collapse View"
               className="p-2 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-slate-800 focus:ring-boun-light-blue"
             >
               <CollapseIcon className="w-6 h-6" />
@@ -163,7 +161,7 @@ const PassageViewerModal: React.FC<PassageViewerModalProps> = ({ isOpen, onClose
             <article className="prose prose-lg dark:prose-invert max-w-none">
                  <div className="flex items-center mb-4">
                     <span className="text-boun-light-blue dark:text-blue-400"><BookOpenIcon className="w-7 h-7" /></span>
-                    <h3 className="ml-3 text-2xl font-semibold text-slate-800 dark:text-slate-200 not-prose">{UI_TEXT.passageTitle[language]}</h3>
+                    <h3 className="ml-3 text-2xl font-semibold text-slate-800 dark:text-slate-200 not-prose">Reading Passage</h3>
                 </div>
                 {highlightedPassage}
 
@@ -171,30 +169,30 @@ const PassageViewerModal: React.FC<PassageViewerModalProps> = ({ isOpen, onClose
                 
                 <div className="flex items-center mb-4">
                     <span className="text-boun-light-blue dark:text-blue-400"><QuestionMarkCircleIcon className="w-7 h-7" /></span>
-                    <h3 className="ml-3 text-2xl font-semibold text-slate-800 dark:text-slate-200 not-prose">{UI_TEXT.questionsTitle[language]}</h3>
+                    <h3 className="ml-3 text-2xl font-semibold text-slate-800 dark:text-slate-200 not-prose">Comprehension Questions</h3>
                 </div>
                 <div className="space-y-6">
                     {categorizedQuestions?.['true-false'] && (
                         <div>
-                            <h4 className="font-semibold text-slate-700 dark:text-slate-300 mb-2 not-prose">{UI_TEXT.questionTrueFalseTitle[language]}</h4>
+                            <h4 className="font-semibold text-slate-700 dark:text-slate-300 mb-2 not-prose">True / False</h4>
                             <ol className="list-decimal list-inside space-y-4">
-                                {categorizedQuestions['true-false'].map((q, i) => <QuestionItem key={`tf-${i}`} question={q} language={language}/>)}
+                                {categorizedQuestions['true-false'].map((q, i) => <QuestionItem key={`tf-${i}`} question={q} />)}
                             </ol>
                         </div>
                     )}
                      {categorizedQuestions?.['multiple-choice'] && (
                          <div>
-                            <h4 className="font-semibold text-slate-700 dark:text-slate-300 mb-2 not-prose">{UI_TEXT.questionMultipleChoiceTitle[language]}</h4>
+                            <h4 className="font-semibold text-slate-700 dark:text-slate-300 mb-2 not-prose">Multiple Choice</h4>
                              <ol className="list-decimal list-inside space-y-4">
-                                {categorizedQuestions['multiple-choice'].map((q, i) => <QuestionItem key={`mc-${i}`} question={q} language={language}/>)}
+                                {categorizedQuestions['multiple-choice'].map((q, i) => <QuestionItem key={`mc-${i}`} question={q} />)}
                             </ol>
                         </div>
                     )}
                     {categorizedQuestions?.['short-answer'] && (
                          <div>
-                            <h4 className="font-semibold text-slate-700 dark:text-slate-300 mb-2 not-prose">{UI_TEXT.questionShortAnswerTitle[language]}</h4>
+                            <h4 className="font-semibold text-slate-700 dark:text-slate-300 mb-2 not-prose">Short Answer</h4>
                              <ol className="list-decimal list-inside space-y-4">
-                                {categorizedQuestions['short-answer'].map((q, i) => <QuestionItem key={`sa-${i}`} question={q} language={language}/>)}
+                                {categorizedQuestions['short-answer'].map((q, i) => <QuestionItem key={`sa-${i}`} question={q} />)}
                             </ol>
                         </div>
                     )}
@@ -207,7 +205,7 @@ const PassageViewerModal: React.FC<PassageViewerModalProps> = ({ isOpen, onClose
 };
 
 
-const QuestionItem: React.FC<{question: ComprehensionQuestion; language: Language}> = ({ question, language }) => (
+const QuestionItem: React.FC<{question: ComprehensionQuestion}> = ({ question }) => (
     <li>
         <span>{question.question}</span>
         {question.type === 'multiple-choice' && question.options && (
@@ -220,7 +218,7 @@ const QuestionItem: React.FC<{question: ComprehensionQuestion; language: Languag
             </ul>
         )}
         <p className="mt-2 pl-1 text-base">
-            <strong className="font-semibold text-slate-500 dark:text-slate-400">{UI_TEXT.answerKey[language]}: </strong>
+            <strong className="font-semibold text-slate-500 dark:text-slate-400">Answer Key: </strong>
             <span className="text-boun-blue dark:text-blue-400 italic">{question.answer}</span>
         </p>
     </li>
