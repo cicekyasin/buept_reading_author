@@ -32,6 +32,8 @@ This tool implements principles from FLED methodology:
 - Comprehensible input through controlled sentence complexity
 - Reduced L2 anxiety through predictable grammatical structures
 - Scaffolded learning through leveled text generation
+
+
 🚦 Usage
 Visit the live application
 Input your desired topic and parameters
