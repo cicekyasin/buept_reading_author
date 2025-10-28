@@ -32,19 +32,6 @@ This tool implements principles from FLED methodology:
 - Comprehensible input through controlled sentence complexity
 - Reduced L2 anxiety through predictable grammatical structures
 - Scaffolded learning through leveled text generation
-
-## 📦 Installation
-
-```bash
-# Clone the repository
-git clone https://github.com/cicekyasin/buept_reading_author.git
-
-# Install dependencies
-npm install
-
-# Run development server
-npm run dev
-
 🚦 Usage
 Visit the live application
 Input your desired topic and parameters
@@ -64,3 +51,16 @@ As a student project exploring the intersection of education and technology, I w
 This project is open source and available under the MIT License.
 
 Built with passion for education technology by Yasin İbrahim Çiçek
+
+## 📦 Installation
+
+```bash
+# Clone the repository
+git clone https://github.com/cicekyasin/buept_reading_author.git
+
+# Install dependencies
+npm install
+
+# Run development server
+npm run dev
+
