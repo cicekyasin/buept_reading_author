@@ -46,6 +46,7 @@ Add multiple output formats
 
 🤝 Contributing
 As a student project exploring the intersection of education and technology, I welcome feedback and suggestions! Feel free to open issues or submit pull requests.
+You can reach me out: yasin.cicek@std.bogazici.edu.tr
 
 📄 License
 This project is open source and available under the MIT License.
