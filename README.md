@@ -34,23 +34,27 @@ This tool implements principles from FLED methodology:
 - Scaffolded learning through leveled text generation
 
 
-🚦 Usage
+#🚦 Usage
+
 Visit the live application
 Input your desired topic and parameters
 Generate and download leveled reading materials
 Use directly in YADYOK classrooms
 
-🗺️ Future Roadmap
+#🗺️ Future Roadmap
+
 Expand grammar control features
 Add vocabulary level customization
 Implement student progress tracking
 Add multiple output formats
 
-🤝 Contributing
+#🤝 Contributing
+
 As a student project exploring the intersection of education and technology, I welcome feedback and suggestions! Feel free to open issues or submit pull requests.
 You can reach me out: yasin.cicek@std.bogazici.edu.tr
 
-📄 License
+#📄 License
+
 This project is open source and available under the MIT License.
 
 Built with passion for education technology by Yasin İbrahim Çiçek
